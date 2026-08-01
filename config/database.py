@@ -43,6 +43,10 @@ def build_database_config(base_dir, environ):
         'HOST': environ['MYSQL_HOST'],
         'PORT': environ['MYSQL_PORT'],
         'CONN_MAX_AGE': 60,
+        # Shared-hosting MySQL may close an idle connection before Django's
+        # persistent-connection lifetime expires. Ping once per request so a
+        # dropped connection is replaced before the first real query.
+        'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'charset': 'utf8mb4',
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",

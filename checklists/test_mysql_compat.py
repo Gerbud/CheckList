@@ -87,6 +87,7 @@ def test_mysql_database_config_uses_utf8mb4_and_persistent_connections():
     assert config['OPTIONS']['charset'] == 'utf8mb4'
     assert config['OPTIONS']['init_command'] == "SET sql_mode='STRICT_TRANS_TABLES'"
     assert config['CONN_MAX_AGE'] == 60
+    assert config['CONN_HEALTH_CHECKS'] is True
     assert config['TEST']['NAME'] == 'store_checklist_test'
 
 
