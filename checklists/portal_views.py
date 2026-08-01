@@ -95,6 +95,7 @@ from checklists.models import (
     StoreDayStatus,
     StoreEmployee,
     StoreNotificationSettings,
+    StorePriceTagTemplate,
     StoreTerminalAccount,
     TelegramOutboundMessage,
     TelegramUserProfile,
@@ -108,6 +109,7 @@ from checklists.portal_forms import (
     ManagedUserCreateForm,
     ManagedUserUpdateForm,
     PasswordResetForm,
+    PriceTagLinksForm,
     ReopenStageForm,
     ShiftAssignmentForm,
     ShiftCopyForm,
@@ -116,6 +118,7 @@ from checklists.portal_forms import (
     StoreDayStatusForm,
     StoreEmployeeForm,
     StoreLogoForm,
+    StorePriceTagTemplateForm,
     StoreAdHocTaskForm,
     StoreAdHocTaskCopyForm,
     UserStoreMembershipForm,
@@ -125,6 +128,7 @@ from checklists.portal_forms import (
     TelegramTestForm,
     managed_user_initial,
 )
+from checklists.price_tags import ProductImportError, import_product
 from checklists.shift_calendar import (
     SHIFT_CELL_META,
     copy_week_to_month,
@@ -1514,6 +1518,54 @@ def director_reports(request):
             'generated_at': timezone.now(),
             'daily_rows': daily_rows,
             **dashboard,
+        },
+    )
+
+
+@store_director_required
+def price_tags(request):
+    store = request.current_store
+    template, _ = StorePriceTagTemplate.objects.get_or_create(store=store)
+    links_form = PriceTagLinksForm()
+    template_form = StorePriceTagTemplateForm(instance=template)
+    products = []
+    import_errors = []
+    action = request.POST.get('action') if request.method == 'POST' else ''
+
+    if action == 'save_template':
+        if not is_system_admin(request.user):
+            return HttpResponseForbidden(
+                'Менять шаблон ценника может только администратор.'
+            )
+        template_form = StorePriceTagTemplateForm(
+            request.POST,
+            instance=template,
+        )
+        if template_form.is_valid():
+            template_form.save()
+            messages.success(request, 'Шаблон ценника сохранён.')
+            return redirect('checklists:director_price_tags')
+    elif action == 'generate':
+        links_form = PriceTagLinksForm(request.POST)
+        if links_form.is_valid():
+            for url in links_form.cleaned_data['urls']:
+                try:
+                    products.append(import_product(url))
+                except ProductImportError as exc:
+                    import_errors.append({'url': url, 'message': str(exc)})
+
+    return render(
+        request,
+        'checklists/director/price_tags.html',
+        {
+            'portal': 'director',
+            'store': store,
+            'price_tag_template': template,
+            'links_form': links_form,
+            'template_form': template_form,
+            'products': products,
+            'import_errors': import_errors,
+            'can_edit_template': is_system_admin(request.user),
         },
     )
 

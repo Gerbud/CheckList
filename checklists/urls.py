@@ -187,6 +187,7 @@ urlpatterns = [
         name='telegram_message_delete',
     ),
     path('director/reports/', portal_views.director_reports, name='director_reports'),
+    path('director/price-tags/', portal_views.price_tags, name='director_price_tags'),
     path('director/reports/daily/', portal_views.director_report_daily, name='director_report_daily'),
     path('director/reports/employees/', portal_views.director_report_employees, name='director_report_employees'),
     path('director/reports/employees/<int:employee_id>/', portal_views.director_report_employee_detail, name='director_report_employee_detail'),

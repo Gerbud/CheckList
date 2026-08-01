@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Печать ценников{% endblock %}
+{% block extra_head %}
+<style>
+  .price-tag-print-area { --tag-primary: {{ price_tag_template.primary_color }}; --tag-accent: {{ price_tag_template.accent_color }}; }
+  .price-tags-grid { display: grid; grid-template-columns: repeat(2, 105mm); justify-content: center; background: #dbe1e8; padding: 8px; overflow-x: auto; }
+  .price-tag { width: 105mm; height: 148.5mm; box-sizing: border-box; background: #fff; border: .35mm dashed #94a3b8; padding: 7mm; display: flex; flex-direction: column; overflow: hidden; color: #0f172a; position: relative; }
+  .price-tag::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3mm; background: var(--tag-accent); }
+  .price-tag-head { min-height: 16mm; display: flex; align-items: center; justify-content: space-between; gap: 4mm; color: var(--tag-primary); }
+  .price-tag-logo { max-width: 43mm; max-height: 14mm; object-fit: contain; object-position: left center; }
+  .price-tag-store { font-size: 5mm; font-weight: 900; line-height: 1; }
+  .price-tag-heading { font-size: 3mm; font-weight: 700; text-align: right; }
+  .price-tag-product { display: grid; grid-template-columns: 1fr 31mm; gap: 4mm; min-height: 39mm; margin-top: 3mm; align-items: center; }
+  .price-tag-product.no-image { grid-template-columns: 1fr; }
+  .price-tag-name { font-size: 5.2mm; line-height: 1.08; font-weight: 900; color: var(--tag-primary); max-height: 29mm; overflow: hidden; }
+  .price-tag-image { width: 31mm; height: 36mm; object-fit: contain; }
+  .price-tag-sku { font-size: 3.2mm; color: #475569; margin-top: 2mm; }
+  .price-tag-price { margin: 4mm 0 3mm; padding: 3mm 4mm; border-radius: 3mm; background: var(--tag-primary); color: #fff; font-size: 10mm; font-weight: 950; line-height: 1; text-align: center; white-space: nowrap; }
+  .price-tag-properties { display: grid; gap: 1mm; font-size: 3.1mm; line-height: 1.15; }
+  .price-tag-property { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 2mm; border-bottom: .25mm solid #e2e8f0; padding-bottom: .8mm; }
+  .price-tag-property span:first-child { color: #64748b; }
+  .price-tag-property strong { text-align: right; overflow-wrap: anywhere; }
+  .price-tag-footer { margin-top: auto; display: flex; justify-content: space-between; gap: 3mm; color: #64748b; font-size: 2.6mm; }
+  @media print {
+    @page { size: A4 portrait; margin: 0; }
+    body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    body * { visibility: hidden !important; }
+    .price-tag-print-area, .price-tag-print-area * { visibility: visible !important; }
+    .price-tag-print-area { position: absolute; inset: 0; width: 210mm; }
+    .price-tags-grid { display: grid; grid-template-columns: repeat(2, 105mm); grid-auto-rows: 148.5mm; width: 210mm; padding: 0; background: #fff; overflow: visible; }
+    .price-tag { break-inside: avoid; page-break-inside: avoid; }
+    .price-tag:nth-child(4n) { break-after: page; page-break-after: always; }
+  }
+  @media (max-width: 900px) {
+    .price-tags-grid { display: flex; flex-direction: column; align-items: center; }
+    .price-tag { transform-origin: top center; }
+  }
+</style>
+{% endblock %}
+{% block portal_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div><h1 class="h3 mb-1">Печать ценников · {{ store.name }}</h1><p class="text-secondary mb-0">Добавьте ссылки — сайт соберёт товары в готовые ценники 1/4 A4.</p></div>
+  {% if products %}<button class="btn btn-success" type="button" onclick="window.print()">🖨️ Печатать {{ products|length }} ценников</button>{% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 {% if can_edit_template %}col-xl-7{% endif %}">
+    <form method="post" class="card p-3 h-100">
+      {% csrf_token %}<input type="hidden" name="action" value="generate">
+      <h2 class="h5">Ссылки на товары</h2>
+      <label class="form-label" for="{{ links_form.urls.id_for_label }}">{{ links_form.urls.label }}</label>
+      {{ links_form.urls }}
+      {% for error in links_form.urls.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+      <div class="form-text">{{ links_form.urls.help_text }}</div>
+      <button class="btn btn-primary mt-3" type="submit">Создать ценники</button>
+    </form>
+  </div>
+  {% if can_edit_template %}<div class="col-12 col-xl-5">
+    <details class="card p-3 h-100"><summary class="h5 mb-0">Шаблон этого магазина</summary>
+      <form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_template">
+      {% for field in template_form %}<div class="{% if field.field.widget.input_type == 'checkbox' %}col-12 form-check ms-2{% else %}col-12{% endif %}">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}
+      <div class="col-12"><button class="btn btn-outline-primary" type="submit">Сохранить шаблон</button></div></form>
+    </details>
+  </div>{% endif %}
+</div>
+
+{% if import_errors %}<div class="alert alert-warning"><strong>Некоторые ссылки не удалось обработать:</strong><ul class="mb-0 mt-2">{% for error in import_errors %}<li><span class="text-break">{{ error.url }}</span> — {{ error.message }}</li>{% endfor %}</ul></div>{% endif %}
+
+{% if products %}<section class="price-tag-print-area" aria-label="Готовые ценники">
+  <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника</span></div>
+  <div class="price-tags-grid">{% for product in products %}
+    <article class="price-tag">
+      <header class="price-tag-head">{% if store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ store.name }}</div>{% endif %}{% if price_tag_template.heading %}<div class="price-tag-heading">{{ price_tag_template.heading }}</div>{% endif %}</header>
+      <div class="price-tag-product {% if not price_tag_template.show_image or not product.image_url %}no-image{% endif %}"><div><div class="price-tag-name">{{ product.name }}</div>{% if price_tag_template.show_sku and product.sku %}<div class="price-tag-sku">Артикул: {{ product.sku }}</div>{% endif %}</div>{% if price_tag_template.show_image and product.image_url %}<img class="price-tag-image" src="{{ product.image_url }}" alt="">{% endif %}</div>
+      <div class="price-tag-price">{{ product.formatted_price }}</div>
+      {% if price_tag_template.show_properties and product.properties %}<div class="price-tag-properties">{% for name, value in product.properties %}{% if forloop.counter <= price_tag_template.max_properties %}<div class="price-tag-property"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endif %}{% endfor %}</div>{% endif %}
+      <footer class="price-tag-footer"><span>{{ price_tag_template.footer|default:store.name }}</span><span>{{ product.source_name }}</span></footer>
+    </article>
+  {% endfor %}</div>
+</section>{% endif %}
+{% endblock %}

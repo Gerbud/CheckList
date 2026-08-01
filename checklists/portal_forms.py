@@ -12,6 +12,7 @@ from checklists.models import (
     StoreDayStatus,
     StoreEmployee,
     StoreNotificationSettings,
+    StorePriceTagTemplate,
     StoreAdHocTask,
     ShiftTemplate,
     TelegramMessageTemplate,
@@ -788,6 +789,47 @@ class ReopenStageForm(forms.Form):
         min_length=5,
         widget=forms.Textarea(attrs={'rows': 3}),
     )
+
+
+class PriceTagLinksForm(forms.Form):
+    urls = forms.CharField(
+        label='Ссылки на товары',
+        help_text='Каждая ссылка с новой строки. Максимум 20 товаров.',
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 7,
+            'placeholder': 'https://example.ru/product/123/\nhttps://example.ru/product/456/',
+        }),
+    )
+
+    def clean_urls(self):
+        urls = [line.strip() for line in self.cleaned_data['urls'].splitlines()]
+        urls = list(dict.fromkeys(line for line in urls if line))
+        if not urls:
+            raise forms.ValidationError('Добавьте хотя бы одну ссылку.')
+        if len(urls) > 20:
+            raise forms.ValidationError('За один раз можно создать не более 20 ценников.')
+        return urls
+
+
+class StorePriceTagTemplateForm(forms.ModelForm):
+    class Meta:
+        model = StorePriceTagTemplate
+        fields = (
+            'heading', 'primary_color', 'accent_color', 'show_image',
+            'show_sku', 'show_properties', 'max_properties', 'footer',
+        )
+        widgets = {
+            'heading': forms.TextInput(attrs={'class': 'form-control'}),
+            'primary_color': forms.TextInput(attrs={
+                'type': 'color', 'class': 'form-control form-control-color',
+            }),
+            'accent_color': forms.TextInput(attrs={
+                'type': 'color', 'class': 'form-control form-control-color',
+            }),
+            'max_properties': forms.NumberInput(attrs={'class': 'form-control'}),
+            'footer': forms.TextInput(attrs={'class': 'form-control'}),
+        }
 
 
 class StoreForm(forms.ModelForm):

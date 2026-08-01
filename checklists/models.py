@@ -2,7 +2,7 @@ from datetime import time
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -54,6 +54,62 @@ class Store(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.code})'
+
+
+class StorePriceTagTemplate(models.Model):
+    color_validator = RegexValidator(
+        r'^#[0-9A-Fa-f]{6}$',
+        'Укажите цвет в формате #112233.',
+    )
+    store = models.OneToOneField(
+        Store,
+        verbose_name='магазин',
+        on_delete=models.CASCADE,
+        related_name='price_tag_template',
+    )
+    heading = models.CharField(
+        'подпись на ценнике',
+        max_length=80,
+        blank=True,
+        default='',
+    )
+    primary_color = models.CharField(
+        'основной цвет',
+        max_length=7,
+        default='#172554',
+        validators=[color_validator],
+    )
+    accent_color = models.CharField(
+        'акцентный цвет',
+        max_length=7,
+        default='#f97316',
+        validators=[color_validator],
+    )
+    show_image = models.BooleanField('показывать фото', default=True)
+    show_sku = models.BooleanField('показывать артикул', default=True)
+    show_properties = models.BooleanField(
+        'показывать характеристики',
+        default=True,
+    )
+    max_properties = models.PositiveSmallIntegerField(
+        'максимум характеристик',
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(8)],
+    )
+    footer = models.CharField(
+        'текст внизу',
+        max_length=120,
+        blank=True,
+        default='',
+    )
+    updated_at = models.DateTimeField('изменён', auto_now=True)
+
+    class Meta:
+        verbose_name = 'шаблон ценника'
+        verbose_name_plural = 'шаблоны ценников'
+
+    def __str__(self):
+        return f'Ценники: {self.store.name}'
 
 
 SCHEDULE_CHANGE_HELP = (
