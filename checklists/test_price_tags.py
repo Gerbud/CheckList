@@ -284,6 +284,42 @@ def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
     assert product.qr_url == 'https://pinel.ru/catalog/sku/1379/'
 
 
+def test_pinel_force_refresh_keeps_search_url_canonical(monkeypatch):
+    product_html = '''<html><head><script type="application/ld+json">
+      {"@type":"Product","name":"Шуруповерт Greenworks",
+       "sku":"HD56000UH","offers":{"price":"18900","priceCurrency":"RUB"}}
+      </script></head><body><h1>Шуруповерт Greenworks</h1></body></html>'''
+    search_html = '''
+      <div class="product__item">
+        <a class="item__title" href="/catalog/sku/2110/">Шуруповерт без АКБ и ЗУ</a>
+        <p class="item__vendor_code">Артикул: HD56000</p>
+        <span class="price">7 490 ₽</span>
+      </div>
+      <div class="product__item">
+        <a class="item__title" href="/catalog/sku/2114/">Шуруповерт АКБ 8 А.ч и ЗУ</a>
+        <p class="item__vendor_code">Артикул: HD56000UH</p>
+        <span class="price">18 900 ₽</span>
+      </div>'''
+    calls = []
+
+    def fake_download(url, **kwargs):
+        calls.append((url, kwargs))
+        if '/search/' in url:
+            return search_html, url
+        return product_html, 'https://pinel.ru/catalog/sku/2114/'
+
+    monkeypatch.setattr('checklists.price_tags._download', fake_download)
+
+    product = import_product(
+        'https://pinel.ru/catalog/sku/2114/', force_refresh=True,
+    )
+
+    search_calls = [item for item in calls if '/search/' in item[0]]
+    assert search_calls
+    assert all(item == ('https://pinel.ru/search/?q=HD56000', {}) for item in search_calls)
+    assert len(product.formatted_price_variants) == 2
+
+
 def test_pinel_display_name_removes_category_and_sku():
     assert clean_pinel_display_name(
         'Фонарь Greenworks 24V G24SL200 | 3502407UA',

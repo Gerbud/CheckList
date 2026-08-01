@@ -580,7 +580,10 @@ def _pinel_search_variants(
         {'q': base_sku},
     )
     try:
-        search_html, _ = _fetch_html(search_url, force_refresh)
+        # PINEL returns an incomplete search page to some server-side clients
+        # when an extra cache-busting query parameter is present. Keep its
+        # canonical search URL; variant product pages are still refreshed.
+        search_html, _ = _fetch_html(search_url)
     except ProductImportError:
         return []
     products_marker = re.search(
