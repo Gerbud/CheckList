@@ -83,7 +83,7 @@
 {% block portal_content %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div><h1 class="h3 mb-1">Печать ценников · {{ store.name }}</h1><p class="text-secondary mb-0">Сайт и шаблон определятся автоматически для каждой ссылки.</p></div>
-  <div class="d-flex flex-wrap gap-2">{% if can_edit_template %}<a class="btn btn-outline-primary" href="{% url 'checklists:price_tag_profile' %}">Профили сайтов</a>{% endif %}{% if products %}<button class="btn btn-success" id="print-price-tags" type="button">🖨️ Печатать</button><button class="btn btn-danger" id="download-price-tags-pdf" type="button">⬇️ Скачать PDF</button>{% endif %}</div>
+  <div class="d-flex flex-wrap gap-2">{% if can_edit_template %}<a class="btn btn-outline-primary" href="{% url 'checklists:price_tag_profile' %}">Профили сайтов</a>{% endif %}{% if products %}<button class="btn btn-success" id="print-price-tags" type="button" data-print-price-tags>🖨️ Печатать</button><button class="btn btn-danger" id="download-price-tags-pdf" type="button">⬇️ Скачать PDF</button>{% endif %}</div>
 </div>
 
 {% if generation_history %}<section class="card p-3 mb-4 no-print"><details><summary class="fw-semibold">История последних генераций</summary><div class="mt-3 d-grid gap-3">{% for generation in generation_history %}<div class="border rounded-3 p-2"><div class="small text-secondary mb-2">{{ generation.created_at|date:"d.m.Y H:i" }} · {{ generation.item_count }} ценников{% if generation.created_by %} · {{ generation.created_by.get_full_name|default:generation.created_by.username }}{% endif %}</div><div class="d-flex flex-wrap gap-2">{% for item in generation.items.all %}<button class="btn btn-sm btn-outline-secondary text-start" type="button" data-history-url="{{ item.source_url }}" title="Добавить ссылку в поле">{{ item.product_name }}</button>{% endfor %}</div></div>{% endfor %}</div></details></section>{% endif %}
@@ -130,6 +130,12 @@
     </article>{% endwith %}
   {% endfor %}</div>{% endfor %}</div>
 </section>{% endif %}
+{% if products %}<div class="d-grid mt-3 mb-4 no-print">
+  <button class="btn btn-success btn-lg py-3 fw-bold" type="button" data-print-price-tags>
+    <span class="d-block fs-5">✅ Данные проверил — отправляю на печать</span>
+    <span class="d-block small fw-normal mt-1">Отличная работа! Ценник не забыт — покупателю не придётся угадывать цену.</span>
+  </button>
+</div>{% endif %}
 {% if products %}<script>
 (function () {
   const csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]')?.value || '';
@@ -404,20 +410,22 @@
   window.addEventListener('beforeprint', enablePriceTagPrintLayout);
   window.addEventListener('afterprint', disablePriceTagPrintLayout);
 
-  document.getElementById('print-price-tags')?.addEventListener('click', async function () {
-    const button = this;
-    const originalText = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Готовим печать…';
-    await waitForPriceTagImages();
-    enablePriceTagPrintLayout();
-    try {
-      window.print();
-    } finally {
-      window.setTimeout(disablePriceTagPrintLayout, 0);
-    }
-    button.disabled = false;
-    button.textContent = originalText;
+  const printButtons = Array.from(document.querySelectorAll('[data-print-price-tags]'));
+  printButtons.forEach(function (button) {
+    button.addEventListener('click', async function () {
+      const originalHtml = button.innerHTML;
+      printButtons.forEach(function (item) { item.disabled = true; });
+      button.textContent = 'Готовим печать…';
+      try {
+        await waitForPriceTagImages();
+        enablePriceTagPrintLayout();
+        window.print();
+      } finally {
+        window.setTimeout(disablePriceTagPrintLayout, 0);
+        printButtons.forEach(function (item) { item.disabled = false; });
+        button.innerHTML = originalHtml;
+      }
+    });
   });
 
   document.getElementById('download-price-tags-pdf')?.addEventListener('click', async function () {

@@ -922,6 +922,9 @@ def test_product_image_proxy_and_pdf_download_controls(
         {'action': 'generate', 'urls': 'https://example.test/product/pdf/'},
     ).content.decode()
     assert 'id="download-price-tags-pdf"' in page
+    assert page.count('data-print-price-tags') >= 3
+    assert 'Данные проверил — отправляю на печать' in page
+    assert 'покупателю не придётся угадывать цену' in page
     assert 'html2canvas.min.js' in page
     assert 'jspdf.umd.min.js' in page
     assert "pdf.addImage(canvas.toDataURL('image/png')" in page
