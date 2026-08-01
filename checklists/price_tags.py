@@ -407,7 +407,88 @@ def _offer_from_html(html):
     )
 
 
-def _pinel_price_variants(html, final_url, current_price, current_currency):
+def _pinel_base_sku(sku):
+    value = re.sub(r'\s+', '', str(sku)).upper()
+    return re.sub(r'U[A-Z]$', '', value)
+
+
+def _pinel_variant_label(name):
+    if re.search(r'\bбез\s+(?:акб|аккумулятора)', name, re.IGNORECASE):
+        return 'Без аккумулятора'
+    capacity = re.search(
+        r'(?:с\s+)?АКБ\s+((?:\d+\s*[xх×]\s*)?\d+(?:[.,]\d+)?)\s*'
+        r'(?:А\s*[/\*]?\s*ч|Ач)',
+        name,
+        re.IGNORECASE,
+    )
+    if capacity:
+        value = re.sub(r'\s*[xх×]\s*', '×', capacity.group(1))
+        return f'{value.replace(".", ",")} А/ч'
+    return str(name).strip()
+
+
+def _pinel_search_variants(sku, final_url):
+    base_sku = _pinel_base_sku(sku)
+    if not base_sku:
+        return []
+    search_url = parse.urljoin(final_url, '/search/?') + parse.urlencode(
+        {'q': base_sku},
+    )
+    try:
+        search_html, _ = _download(search_url)
+    except ProductImportError:
+        return []
+    pattern = re.compile(
+        r'<a\b[^>]*href=["\'](?P<href>/catalog/sku/[^"\']+)["\'][^>]*'
+        r'class=["\'][^"\']*\bitem__title\b[^"\']*["\'][^>]*>'
+        r'(?P<name>.*?)</a>.*?'
+        r'item__vendor_code[^>]*>\s*Артикул:\s*(?P<sku>[^<]+)</p>.*?'
+        r'<span\b[^>]*class=["\'][^"\']*\bprice\b[^"\']*["\'][^>]*>'
+        r'\s*(?P<price>[\d\s\u00a0]+)\s*₽',
+        re.IGNORECASE | re.DOTALL,
+    )
+    variants = []
+    seen_urls = set()
+    for match in pattern.finditer(search_html):
+        candidate_sku = re.sub(r'\s+', '', match.group('sku'))
+        if _pinel_base_sku(candidate_sku) != base_sku:
+            continue
+        url = parse.urljoin(final_url, match.group('href'))
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        name = re.sub(r'<[^>]+>', '', match.group('name'))
+        name = re.sub(r'\s+', ' ', name).strip()
+        price = re.sub(r'[\s\u00a0]+', '', match.group('price'))
+        variants.append({
+            'label': _pinel_variant_label(name),
+            'price': price,
+            'currency': 'RUB',
+            'url': url,
+        })
+    if len(variants) <= 5:
+        return variants
+    current_path = parse.urlsplit(final_url).path.rstrip('/')
+    selected = variants[:5]
+    if not any(
+        parse.urlsplit(item['url']).path.rstrip('/') == current_path
+        for item in selected
+    ):
+        current = next((
+            item for item in variants
+            if parse.urlsplit(item['url']).path.rstrip('/') == current_path
+        ), None)
+        if current:
+            selected[-1] = current
+    return selected
+
+
+def _pinel_price_variants(
+    html, final_url, current_price, current_currency, sku='',
+):
+    search_variants = _pinel_search_variants(sku, final_url)
+    if len(search_variants) >= 2:
+        return search_variants
     links = _pinel_equipment_links(html, final_url)
     if len(links) < 2:
         return []
@@ -775,6 +856,6 @@ def import_product(url):
     hostname = (parse.urlsplit(final_url).hostname or '').casefold()
     if hostname == 'pinel.ru' or hostname.endswith('.pinel.ru'):
         imported.price_variants = _pinel_price_variants(
-            html, final_url, imported.price, imported.currency,
+            html, final_url, imported.price, imported.currency, imported.sku,
         )
     return imported

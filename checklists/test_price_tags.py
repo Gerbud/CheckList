@@ -140,6 +140,65 @@ def test_pinel_imports_prices_for_up_to_five_equipment_variants(monkeypatch):
     ]
 
 
+def test_pinel_finds_variants_through_search_by_base_sku(monkeypatch):
+    product_html = '''
+        <html><head><script type="application/ld+json">
+        {"@type":"Product","name":"Газонокосилка Greenworks",
+         "sku":"2519207UB","offers":{"price":"193970","priceCurrency":"RUB"}}
+        </script></head><body><h1>Газонокосилка Greenworks</h1></body></html>
+    '''
+
+    def card(path, name, sku, price):
+        return f'''
+          <a href="{path}" class="item__title">{name}</a>
+          <p class="item__vendor_code">Артикул: {sku}</p>
+          <span class="price">{price} ₽</span>
+        '''
+
+    search_html = ''.join([
+        card(
+            '/catalog/sku/999/', 'Несвязанный товар', '2602807', '10 000',
+        ),
+        card(
+            '/catalog/sku/1556/',
+            'Газонокосилка Greenworks без АКБ и ЗУ',
+            '2519207', '189 990',
+        ),
+        card(
+            '/catalog/sku/1604/',
+            'Газонокосилка Greenworks с АКБ 2,5 А/ч и ЗУ',
+            '2519207UC', '184 970',
+        ),
+        card(
+            '/catalog/sku/1605/',
+            'Газонокосилка Greenworks с АКБ 5 А/ч и ЗУ',
+            '2519207UB', '193 970',
+        ),
+    ])
+    calls = []
+
+    def fake_download(url):
+        calls.append(url)
+        if '/search/' in url:
+            return search_html, url
+        return product_html, 'https://www.pinel.ru/catalog/sku/1605/'
+
+    monkeypatch.setattr('checklists.price_tags._download', fake_download)
+
+    product = import_product('https://www.pinel.ru/catalog/sku/1605/')
+
+    assert len(calls) == 2
+    assert calls[1].endswith('/search/?q=2519207')
+    assert product.formatted_price_variants == [
+        {
+            'label': 'Без аккумулятора',
+            'price': '189 990 ₽', 'is_current': False,
+        },
+        {'label': '2,5 А/ч', 'price': '184 970 ₽', 'is_current': False},
+        {'label': '5 А/ч', 'price': '193 970 ₽', 'is_current': True},
+    ]
+
+
 def test_product_falls_back_to_heading_price_and_table(monkeypatch):
     html = '''
         <html><head><meta property="og:image" content="/item.jpg"></head>
