@@ -278,6 +278,24 @@ def _product_identity(product, name, properties, meta):
             model = after.strip(' ,—-')[:100]
     if not product_type and category:
         product_type = category.split('>')[-1].strip()
+    if not product_type:
+        known_types = (
+            'Бокс на крышу',
+            'Автомобильный бокс',
+            'Автобокс',
+            'Газонокосилка',
+            'Снегоуборщик',
+            'Триммер',
+            'Воздуходувка',
+            'Бензопила',
+            'Цепная пила',
+        )
+        for known_type in known_types:
+            if name.casefold().startswith(known_type.casefold()):
+                product_type = name[:len(known_type)]
+                if not model:
+                    model = name[len(known_type):].strip(' ,—-')
+                break
     return brand, model, product_type, category
 
 

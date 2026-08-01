@@ -231,6 +231,19 @@ def test_seo_product_name_is_cleaned_without_losing_variant():
         '(скоба), Белый матовый'
     )
 
+    product = ImportedProduct(
+        url='https://example.test/element/',
+        name=clean_product_name(value),
+    )
+    from checklists.price_tags import _product_identity
+    product.brand, product.model, product.product_type, product.category_name = (
+        _product_identity({}, product.name, [], {})
+    )
+    assert product.secondary_name == 'Бокс на крышу'
+    assert product.prominent_name == (
+        'Element 590 белый карбон (скоба), Белый матовый'
+    )
+
 
 def test_four_price_tags_are_grouped_on_one_a4_sheet(
     client,
