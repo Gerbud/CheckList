@@ -20,7 +20,9 @@ from django.utils import timezone
 from checklists.access_control import (
     DIRECTOR_STORE_SESSION_KEY,
     get_post_login_redirect,
+    is_store_director,
     is_system_admin,
+    price_tag_tool_required,
     resolve_managed_store,
     set_managed_store,
     store_director_required,
@@ -96,6 +98,7 @@ from checklists.models import (
     StoreEmployee,
     StoreNotificationSettings,
     StorePriceTagTemplate,
+    StorePriceTagCategory,
     StoreTerminalAccount,
     TelegramOutboundMessage,
     TelegramUserProfile,
@@ -110,6 +113,7 @@ from checklists.portal_forms import (
     ManagedUserUpdateForm,
     PasswordResetForm,
     PriceTagLinksForm,
+    StorePriceTagCategoryForm,
     ReopenStageForm,
     ShiftAssignmentForm,
     ShiftCopyForm,
@@ -128,7 +132,11 @@ from checklists.portal_forms import (
     TelegramTestForm,
     managed_user_initial,
 )
-from checklists.price_tags import ProductImportError, import_product
+from checklists.price_tags import (
+    ProductImportError,
+    apply_category_rules,
+    import_product,
+)
 from checklists.shift_calendar import (
     SHIFT_CELL_META,
     copy_week_to_month,
@@ -1522,35 +1530,62 @@ def director_reports(request):
     )
 
 
-@store_director_required
+@price_tag_tool_required
 def price_tags(request):
     store = request.current_store
     template, _ = StorePriceTagTemplate.objects.get_or_create(store=store)
+    categories = list(store.price_tag_categories.all())
     links_form = PriceTagLinksForm()
     template_form = StorePriceTagTemplateForm(instance=template)
+    category_form = StorePriceTagCategoryForm()
     products = []
     import_errors = []
     action = request.POST.get('action') if request.method == 'POST' else ''
 
     if action == 'save_template':
-        if not is_system_admin(request.user):
+        if not (is_system_admin(request.user) or is_store_director(request.user)):
             return HttpResponseForbidden(
-                'Менять шаблон ценника может только администратор.'
+                'Менять профиль ценников может администр или директор.'
             )
         template_form = StorePriceTagTemplateForm(
             request.POST,
+            request.FILES,
             instance=template,
         )
         if template_form.is_valid():
             template_form.save()
             messages.success(request, 'Шаблон ценника сохранён.')
             return redirect('checklists:director_price_tags')
+    elif action == 'save_category':
+        category_id = request.POST.get('category_id')
+        category = (
+            get_object_or_404(StorePriceTagCategory, pk=category_id, store=store)
+            if category_id else StorePriceTagCategory(store=store)
+        )
+        category_form = StorePriceTagCategoryForm(request.POST, instance=category)
+        if category_form.is_valid():
+            category_form.save()
+            messages.success(request, 'Правило категории сохранено.')
+            return redirect('checklists:director_price_tags')
+    elif action == 'delete_category':
+        category = get_object_or_404(
+            StorePriceTagCategory,
+            pk=request.POST.get('category_id'),
+            store=store,
+        )
+        category.delete()
+        messages.success(request, 'Правило категории удалено.')
+        return redirect('checklists:director_price_tags')
     elif action == 'generate':
         links_form = PriceTagLinksForm(request.POST)
         if links_form.is_valid():
             for url in links_form.cleaned_data['urls']:
                 try:
-                    products.append(import_product(url))
+                    products.append(apply_category_rules(
+                        import_product(url),
+                        [item for item in categories if item.is_active],
+                        template.max_properties,
+                    ))
                 except ProductImportError as exc:
                     import_errors.append({'url': url, 'message': str(exc)})
 
@@ -1558,14 +1593,25 @@ def price_tags(request):
         request,
         'checklists/director/price_tags.html',
         {
-            'portal': 'director',
+            'portal': (
+                'director'
+                if is_system_admin(request.user) or is_store_director(request.user)
+                else 'price_tags'
+            ),
             'store': store,
             'price_tag_template': template,
             'links_form': links_form,
             'template_form': template_form,
+            'category_form': category_form,
+            'category_forms': [
+                (category, StorePriceTagCategoryForm(instance=category))
+                for category in categories
+            ],
             'products': products,
             'import_errors': import_errors,
-            'can_edit_template': is_system_admin(request.user),
+            'can_edit_template': (
+                is_system_admin(request.user) or is_store_director(request.user)
+            ),
         },
     )
 

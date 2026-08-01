@@ -13,6 +13,7 @@ from checklists.models import (
     StoreEmployee,
     StoreNotificationSettings,
     StorePriceTagTemplate,
+    StorePriceTagCategory,
     StoreAdHocTask,
     ShiftTemplate,
     TelegramMessageTemplate,
@@ -816,10 +817,11 @@ class StorePriceTagTemplateForm(forms.ModelForm):
     class Meta:
         model = StorePriceTagTemplate
         fields = (
-            'heading', 'primary_color', 'accent_color', 'show_image',
+            'logo', 'heading', 'primary_color', 'accent_color', 'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
         )
         widgets = {
+            'logo': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'heading': forms.TextInput(attrs={'class': 'form-control'}),
             'primary_color': forms.TextInput(attrs={
                 'type': 'color', 'class': 'form-control form-control-color',
@@ -829,6 +831,24 @@ class StorePriceTagTemplateForm(forms.ModelForm):
             }),
             'max_properties': forms.NumberInput(attrs={'class': 'form-control'}),
             'footer': forms.TextInput(attrs={'class': 'form-control'}),
+        }
+
+
+class StorePriceTagCategoryForm(forms.ModelForm):
+    class Meta:
+        model = StorePriceTagCategory
+        fields = ('name', 'keywords', 'property_names', 'sort_order', 'is_active')
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'keywords': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'газонокосилка, lawn mower',
+            }),
+            'property_names': forms.Textarea(attrs={
+                'class': 'form-control', 'rows': 5,
+                'placeholder': 'Мощность\nШирина скашивания\nВес',
+            }),
+            'sort_order': forms.NumberInput(attrs={'class': 'form-control'}),
         }
 
 

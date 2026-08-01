@@ -26,6 +26,12 @@ class ImportedProduct:
     image_url: str = ''
     properties: list = field(default_factory=list)
     source_name: str = ''
+    brand: str = ''
+    model: str = ''
+    product_type: str = ''
+    category_name: str = ''
+    displayed_properties: list = field(default_factory=list)
+    category_rule: object = None
 
     @property
     def formatted_price(self):
@@ -38,6 +44,15 @@ class ImportedProduct:
             number = str(self.price)
         suffix = '₽' if self.currency.upper() in {'RUB', 'RUR', '₽'} else self.currency
         return f'{number} {suffix}'.strip()
+
+    @property
+    def prominent_name(self):
+        value = ' '.join(item for item in (self.brand, self.model) if item).strip()
+        return value or self.name
+
+    @property
+    def secondary_name(self):
+        return self.product_type or self.category_name or 'Товар'
 
 
 class _ProductHTMLParser(HTMLParser):
@@ -237,6 +252,75 @@ def _properties(product, parser=None):
     return result
 
 
+def _brand_name(product, properties):
+    brand = product.get('brand')
+    if isinstance(brand, dict):
+        brand = brand.get('name')
+    if brand:
+        return str(brand).strip()
+    for name, value in properties:
+        if name.casefold().rstrip(':') in {'бренд', 'производител'}:
+            return value.split(',')[0].strip()
+    return ''
+
+
+def _product_identity(product, name, properties, meta):
+    brand = _brand_name(product, properties)
+    category = str(
+        product.get('category') or meta.get('product:category') or ''
+    ).strip()
+    model = str(product.get('model') or '').strip()
+    product_type = ''
+    if brand and brand.casefold() in name.casefold():
+        before, after = re.split(re.escape(brand), name, maxsplit=1, flags=re.I)
+        product_type = before.strip(' ,—-')
+        if not model:
+            model = re.split(r'[,;|()]', after, maxsplit=1)[0].strip(' ,—-')
+            model = ' '.join(model.split()[:5])
+    if not product_type and category:
+        product_type = category.split('>')[-1].strip()
+    return brand, model, product_type, category
+
+
+def apply_category_rules(product, categories, max_properties=5):
+    haystack = ' '.join((
+        product.name,
+        product.product_type,
+        product.category_name,
+    )).casefold()
+    matched = None
+    for category in categories:
+        if any(keyword.casefold() in haystack for keyword in category.keyword_list):
+            matched = category
+            break
+    product.category_rule = matched
+    if matched:
+        available = {
+            name.casefold().strip().rstrip(':'): (name, value)
+            for name, value in product.properties
+        }
+        selected = []
+        for requested_name in matched.property_name_list:
+            key = requested_name.casefold().strip().rstrip(':')
+            exact = available.get(key)
+            if exact:
+                selected.append(exact)
+                continue
+            fuzzy = next(
+                (
+                    pair for available_name, pair in available.items()
+                    if key in available_name or available_name in key
+                ),
+                None,
+            )
+            if fuzzy:
+                selected.append(fuzzy)
+        product.displayed_properties = selected[:max_properties]
+    else:
+        product.displayed_properties = product.properties[:max_properties]
+    return product
+
+
 def import_product(url):
     html, final_url = _download(url)
     parser = _ProductHTMLParser()
@@ -286,6 +370,10 @@ def import_product(url):
         product.get('image') or meta.get('og:image') or meta.get('twitter:image'),
         final_url,
     )
+    properties = _properties(product, parser)
+    brand, model, product_type, category = _product_identity(
+        product, name, properties, meta,
+    )
     return ImportedProduct(
         url=final_url,
         name=name,
@@ -293,6 +381,10 @@ def import_product(url):
         currency=str(currency).strip(),
         sku=str(sku).strip(),
         image_url=image_url,
-        properties=_properties(product, parser),
+        properties=properties,
         source_name=parse.urlsplit(final_url).hostname or '',
+        brand=brand,
+        model=model,
+        product_type=product_type,
+        category_name=category,
     )

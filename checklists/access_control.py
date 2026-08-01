@@ -246,6 +246,21 @@ def store_director_required(view):
     return login_required(wrapped)
 
 
+def price_tag_tool_required(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if is_system_admin(request.user) or is_store_director(request.user):
+            store = resolve_managed_store(request)
+        else:
+            store = get_user_store(request.user)
+        if store is None or not store.is_active:
+            return HttpResponseForbidden('Инструмент ценников недоступен.')
+        request.current_store = store
+        return view(request, *args, **kwargs)
+
+    return login_required(wrapped)
+
+
 def system_admin_required(view):
     @wraps(view)
     def wrapped(request, *args, **kwargs):

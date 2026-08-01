@@ -67,6 +67,12 @@ class StorePriceTagTemplate(models.Model):
         on_delete=models.CASCADE,
         related_name='price_tag_template',
     )
+    logo = models.ImageField(
+        'логотип для ценников',
+        upload_to='stores/price_tag_logo/',
+        null=True,
+        blank=True,
+    )
     heading = models.CharField(
         'подпись на ценнике',
         max_length=80,
@@ -110,6 +116,49 @@ class StorePriceTagTemplate(models.Model):
 
     def __str__(self):
         return f'Ценники: {self.store.name}'
+
+
+class StorePriceTagCategory(models.Model):
+    store = models.ForeignKey(
+        Store,
+        verbose_name='магазин',
+        on_delete=models.CASCADE,
+        related_name='price_tag_categories',
+    )
+    name = models.CharField('категория', max_length=120)
+    keywords = models.TextField(
+        'слова для распознавания',
+        help_text='Через запятую: газонокосилка, lawn mower.',
+    )
+    property_names = models.TextField(
+        'свойства на ценнике',
+        help_text='Каждое свойство с новой строки, в нужном порядке.',
+    )
+    sort_order = models.PositiveIntegerField('порядок', default=0)
+    is_active = models.BooleanField('активна', default=True)
+    updated_at = models.DateTimeField('изменена', auto_now=True)
+
+    class Meta:
+        verbose_name = 'категория ценников'
+        verbose_name_plural = 'категории ценников'
+        ordering = ('sort_order', 'name', 'id')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('store', 'name'),
+                name='unique_price_tag_category_store',
+            ),
+        ]
+
+    @property
+    def keyword_list(self):
+        return [item.strip() for item in self.keywords.split(',') if item.strip()]
+
+    @property
+    def property_name_list(self):
+        return [item.strip() for item in self.property_names.splitlines() if item.strip()]
+
+    def __str__(self):
+        return f'{self.store.name}: {self.name}'
 
 
 SCHEDULE_CHANGE_HELP = (

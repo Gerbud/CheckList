@@ -1,8 +1,13 @@
 import pytest
 from django.urls import reverse
 
-from checklists.models import EmployeeProfile, Store, StorePriceTagTemplate
-from checklists.price_tags import ImportedProduct, import_product
+from checklists.models import (
+    EmployeeProfile,
+    Store,
+    StorePriceTagCategory,
+    StorePriceTagTemplate,
+)
+from checklists.price_tags import ImportedProduct, apply_category_rules, import_product
 from checklists.test_portals import create_access_user
 
 
@@ -56,6 +61,8 @@ def test_product_is_imported_from_schema_org(monkeypatch):
     assert product.image_url == 'https://shop.example/box.jpg'
     assert ('Бренд', 'Broomer') in product.properties
     assert ('Объём', '430 л') in product.properties
+    assert product.prominent_name == 'Broomer Venture L'
+    assert product.secondary_name == 'Бокс'
 
 
 def test_product_falls_back_to_heading_price_and_table(monkeypatch):
@@ -80,7 +87,7 @@ def test_product_falls_back_to_heading_price_and_table(monkeypatch):
     assert ('Объем (л.)', '430') in product.properties
 
 
-def test_director_can_generate_but_cannot_edit_template(
+def test_director_can_generate_and_edit_store_profile(
     client,
     price_tag_setup,
     monkeypatch,
@@ -108,11 +115,21 @@ def test_director_can_generate_but_cannot_edit_template(
     assert 'Тестовый автобокс' in content
     assert '50 000 ₽' in content
     assert 'На листе A4 будет 4 ценника' in content
-    denied = client.post(
+    assert 'data-qr-url="https://example.test/product/1/"' in content
+    saved = client.post(
         reverse('checklists:director_price_tags'),
-        {'action': 'save_template', 'heading': 'Акция'},
+        {
+            'action': 'save_template',
+            'heading': 'Акция',
+            'primary_color': '#112233',
+            'accent_color': '#ff6600',
+            'max_properties': 4,
+        },
     )
-    assert denied.status_code == 403
+    assert saved.status_code == 302
+    assert StorePriceTagTemplate.objects.get(
+        store=price_tag_setup['store']
+    ).heading == 'Акция'
 
 
 def test_admin_can_save_separate_store_template(client, price_tag_setup):
@@ -143,7 +160,54 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     assert template.max_properties == 4
 
 
-def test_terminal_account_cannot_open_price_tags(client, price_tag_setup):
+def test_terminal_account_can_open_tool_and_manage_category(client, price_tag_setup):
     client.force_login(price_tag_setup['terminal'])
     response = client.get(reverse('checklists:director_price_tags'))
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert 'Свойства по категориям' in response.content.decode()
+
+    saved = client.post(
+        reverse('checklists:director_price_tags'),
+        {
+            'action': 'save_category',
+            'name': 'Газонокосилки',
+            'keywords': 'газонокосилка, lawn mower',
+            'property_names': 'Мощность\nШирина скашивания',
+            'sort_order': 1,
+            'is_active': 'on',
+        },
+    )
+    assert saved.status_code == 302
+    assert StorePriceTagCategory.objects.filter(
+        store=price_tag_setup['store'],
+        name='Газонокосилки',
+    ).exists()
+
+
+def test_category_rule_selects_and_orders_properties(price_tag_setup):
+    category = StorePriceTagCategory.objects.create(
+        store=price_tag_setup['store'],
+        name='Снегоуборщики',
+        keywords='снегоуборщик',
+        property_names='Ширина захвата\nМощность\nВес',
+    )
+    product = ImportedProduct(
+        url='https://example.test/snow/',
+        name='Снегоуборщик Greenworks GD82ST',
+        product_type='Снегоуборщик',
+        properties=[
+            ('Вес', '68 кг'),
+            ('Мощность', '2.2 кВт'),
+            ('Цвет', 'зеленый'),
+            ('Ширина захвата', '61 см'),
+        ],
+    )
+
+    apply_category_rules(product, [category], max_properties=3)
+
+    assert product.category_rule == category
+    assert product.displayed_properties == [
+        ('Ширина захвата', '61 см'),
+        ('Мощность', '2.2 кВт'),
+        ('Вес', '68 кг'),
+    ]

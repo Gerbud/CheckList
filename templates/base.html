@@ -65,6 +65,9 @@
         </a>
         {% if request.user.is_authenticated %}
             <div class="d-flex align-items-center gap-2">
+            {% if portal_store %}
+                <a class="btn btn-warning fw-semibold" href="{% url 'checklists:director_price_tags' %}">Ценники</a>
+            {% endif %}
             {% if personal_schedule_available %}
                 <a class="btn btn-outline-light" href="{% url 'checklists:employee_schedule' %}">Мой график</a>
             {% endif %}
@@ -83,12 +86,13 @@
             <div class="alert alert-{{ message.tags|default:'info' }}" role="alert">{{ message }}</div>
         {% endfor %}
     {% endif %}
-    {% if portal %}<div class="portal-layout">
+    {% if portal %}<div class="{% if portal != 'price_tags' %}portal-layout{% endif %}">
+        {% if portal != 'price_tags' %}
         <aside class="portal-sidebar card p-2 mb-3">
             <details class="d-md-none"><summary class="fw-semibold p-2">Меню</summary>
             <div class="mt-2">{% include "checklists/_portal_navigation.html" %}</div></details>
             <div class="d-none d-md-block">{% include "checklists/_portal_navigation.html" %}</div>
-        </aside><section class="min-w-0">{% include "checklists/_breadcrumbs.html" %}{% block portal_content %}{% endblock %}</section>
+        </aside>{% endif %}<section class="min-w-0">{% include "checklists/_breadcrumbs.html" %}{% block portal_content %}{% endblock %}</section>
     </div>{% else %}{% include "checklists/_breadcrumbs.html" %}{% block content %}{% endblock %}{% endif %}
 </main>
 

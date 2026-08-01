@@ -13,6 +13,7 @@
   .price-tag-product { display: grid; grid-template-columns: 1fr 31mm; gap: 4mm; min-height: 39mm; margin-top: 3mm; align-items: center; }
   .price-tag-product.no-image { grid-template-columns: 1fr; }
   .price-tag-name { font-size: 5.2mm; line-height: 1.08; font-weight: 900; color: var(--tag-primary); max-height: 29mm; overflow: hidden; }
+  .price-tag-type { color: #64748b; font-size: 3.2mm; font-weight: 700; margin-bottom: 1.5mm; }
   .price-tag-image { width: 31mm; height: 36mm; object-fit: contain; }
   .price-tag-sku { font-size: 3.2mm; color: #475569; margin-top: 2mm; }
   .price-tag-price { margin: 4mm 0 3mm; padding: 3mm 4mm; border-radius: 3mm; background: var(--tag-primary); color: #fff; font-size: 10mm; font-weight: 950; line-height: 1; text-align: center; white-space: nowrap; }
@@ -20,7 +21,9 @@
   .price-tag-property { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 2mm; border-bottom: .25mm solid #e2e8f0; padding-bottom: .8mm; }
   .price-tag-property span:first-child { color: #64748b; }
   .price-tag-property strong { text-align: right; overflow-wrap: anywhere; }
-  .price-tag-footer { margin-top: auto; display: flex; justify-content: space-between; gap: 3mm; color: #64748b; font-size: 2.6mm; }
+  .price-tag-footer { margin-top: auto; min-height: 19mm; padding-right: 22mm; display: flex; align-items: end; justify-content: space-between; gap: 3mm; color: #64748b; font-size: 2.6mm; }
+  .price-tag-qr { position: absolute; right: 6mm; bottom: 5mm; width: 19mm; height: 19mm; padding: 1mm; background: #fff; border: .25mm solid #e2e8f0; }
+  .price-tag-qr canvas { width: 17mm !important; height: 17mm !important; display: block; }
   @media print {
     @page { size: A4 portrait; margin: 0; }
     body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
@@ -56,13 +59,23 @@
     </form>
   </div>
   {% if can_edit_template %}<div class="col-12 col-xl-5">
-    <details class="card p-3 h-100"><summary class="h5 mb-0">Шаблон этого магазина</summary>
-      <form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_template">
+    <details class="card p-3 h-100"><summary class="h5 mb-0">Профиль ценников магазина</summary>
+      <form method="post" enctype="multipart/form-data" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_template">
       {% for field in template_form %}<div class="{% if field.field.widget.input_type == 'checkbox' %}col-12 form-check ms-2{% else %}col-12{% endif %}">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}
       <div class="col-12"><button class="btn btn-outline-primary" type="submit">Сохранить шаблон</button></div></form>
     </details>
   </div>{% endif %}
 </div>
+
+<section class="card p-3 mb-4">
+  <div class="d-flex flex-wrap justify-content-between gap-2 mb-3"><div><h2 class="h5 mb-1">Свойства по категориям</h2><p class="small text-secondary mb-0">Каждый сотрудник магазина может менять эти правила. Свойства выводятся в указанном порядке.</p></div></div>
+  <div class="row g-3">{% for category, form in category_forms %}<div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">{{ category.name }}{% if not category.is_active %} <span class="badge text-bg-secondary">выключена</span>{% endif %}</summary>
+    <form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_category"><input type="hidden" name="category_id" value="{{ category.pk }}">{% for field in form %}<div class="col-12">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}</div>{% endfor %}<div class="col-12"><button class="btn btn-sm btn-primary">Сохранить</button></div></form>
+    <form method="post" class="mt-2" onsubmit="return confirm('Удалить правило этой категории?')">{% csrf_token %}<input type="hidden" name="action" value="delete_category"><input type="hidden" name="category_id" value="{{ category.pk }}"><button class="btn btn-sm btn-outline-danger">Удалить</button></form>
+  </details></div>{% endfor %}
+  <div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">+ Добавить категорию</summary><form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_category">{% for field in category_form %}<div class="col-12">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<div class="col-12"><button class="btn btn-primary">Добавить</button></div></form></details></div>
+  </div>
+</section>
 
 {% if import_errors %}<div class="alert alert-warning"><strong>Некоторые ссылки не удалось обработать:</strong><ul class="mb-0 mt-2">{% for error in import_errors %}<li><span class="text-break">{{ error.url }}</span> — {{ error.message }}</li>{% endfor %}</ul></div>{% endif %}
 
@@ -70,12 +83,21 @@
   <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника</span></div>
   <div class="price-tags-grid">{% for product in products %}
     <article class="price-tag">
-      <header class="price-tag-head">{% if store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ store.name }}</div>{% endif %}{% if price_tag_template.heading %}<div class="price-tag-heading">{{ price_tag_template.heading }}</div>{% endif %}</header>
-      <div class="price-tag-product {% if not price_tag_template.show_image or not product.image_url %}no-image{% endif %}"><div><div class="price-tag-name">{{ product.name }}</div>{% if price_tag_template.show_sku and product.sku %}<div class="price-tag-sku">Артикул: {{ product.sku }}</div>{% endif %}</div>{% if price_tag_template.show_image and product.image_url %}<img class="price-tag-image" src="{{ product.image_url }}" alt="">{% endif %}</div>
+      <header class="price-tag-head">{% if price_tag_template.logo %}<img class="price-tag-logo" src="{{ price_tag_template.logo.url }}" alt="{{ store.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ store.name }}</div>{% endif %}{% if price_tag_template.heading %}<div class="price-tag-heading">{{ price_tag_template.heading }}</div>{% endif %}</header>
+      <div class="price-tag-product {% if not price_tag_template.show_image or not product.image_url %}no-image{% endif %}"><div><div class="price-tag-type">{{ product.secondary_name }}</div><div class="price-tag-name">{{ product.prominent_name }}</div>{% if price_tag_template.show_sku and product.sku %}<div class="price-tag-sku">Артикул: {{ product.sku }}</div>{% endif %}</div>{% if price_tag_template.show_image and product.image_url %}<img class="price-tag-image" src="{{ product.image_url }}" alt="">{% endif %}</div>
       <div class="price-tag-price">{{ product.formatted_price }}</div>
-      {% if price_tag_template.show_properties and product.properties %}<div class="price-tag-properties">{% for name, value in product.properties %}{% if forloop.counter <= price_tag_template.max_properties %}<div class="price-tag-property"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endif %}{% endfor %}</div>{% endif %}
-      <footer class="price-tag-footer"><span>{{ price_tag_template.footer|default:store.name }}</span><span>{{ product.source_name }}</span></footer>
+      {% if price_tag_template.show_properties and product.displayed_properties %}<div class="price-tag-properties">{% for name, value in product.displayed_properties %}<div class="price-tag-property"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
+      <footer class="price-tag-footer"><span>{{ price_tag_template.footer|default:store.name }}</span><span>{% if product.category_rule %}{{ product.category_rule.name }}{% else %}{{ product.source_name }}{% endif %}</span></footer><div class="price-tag-qr" data-qr-url="{{ product.url }}" aria-label="QR-код товара"></div>
     </article>
   {% endfor %}</div>
 </section>{% endif %}
+{% if products %}<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script><script>
+window.addEventListener('load', function () {
+  document.querySelectorAll('[data-qr-url]').forEach(function (node) {
+    QRCode.toCanvas(node.dataset.qrUrl, { width: 160, margin: 1, errorCorrectionLevel: 'M' }, function (error, canvas) {
+      if (!error) node.appendChild(canvas);
+    });
+  });
+});
+</script>{% endif %}
 {% endblock %}
