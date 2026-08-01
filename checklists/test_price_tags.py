@@ -132,10 +132,10 @@ def test_pinel_imports_prices_for_up_to_five_equipment_variants(monkeypatch):
 
     assert product.formatted_price_variants == [
         {
-            'label': 'Без АКБ и ЗУ',
-            'price': '149 970 ₽',
-            'is_current': False,
-            'is_base': True,
+                'label': 'Без АКБ и ЗУ',
+                'price': '149 970 ₽',
+                'is_current': True,
+                'is_base': True,
         },
         {
             'label': '+ АКБ 2,5 А/ч и ЗУ',
@@ -143,7 +143,7 @@ def test_pinel_imports_prices_for_up_to_five_equipment_variants(monkeypatch):
         },
         {
             'label': '+ АКБ 5 А/ч и ЗУ',
-            'price': '193 970 ₽', 'is_current': True, 'is_base': False,
+            'price': '193 970 ₽', 'is_current': False, 'is_base': False,
         },
     ]
 
@@ -188,21 +188,30 @@ def test_pinel_finds_variants_through_search_by_base_sku(monkeypatch):
     calls = []
 
     def fake_download(url):
+        from urllib.parse import urlsplit
         calls.append(url)
         if '/search/' in url:
             return search_html, url
+        path = urlsplit(url).path
+        if path == '/catalog/sku/1556/':
+            return (
+                product_html.replace('2519207UB', '2519207').replace(
+                    '193970', '189990',
+                ),
+                'https://www.pinel.ru/catalog/sku/1556/',
+            )
         return product_html, 'https://www.pinel.ru/catalog/sku/1605/'
 
     monkeypatch.setattr('checklists.price_tags._download', fake_download)
 
     product = import_product('https://www.pinel.ru/catalog/sku/1605/')
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[1].endswith('/search/?q=2519207')
     assert product.formatted_price_variants == [
         {
             'label': 'Без АКБ и ЗУ',
-            'price': '189 990 ₽', 'is_current': False, 'is_base': True,
+            'price': '189 990 ₽', 'is_current': True, 'is_base': True,
         },
         {
             'label': '+ АКБ 2,5 А/ч и ЗУ',
@@ -210,7 +219,7 @@ def test_pinel_finds_variants_through_search_by_base_sku(monkeypatch):
         },
         {
             'label': '+ АКБ 5 А/ч и ЗУ',
-            'price': '193 970 ₽', 'is_current': True, 'is_base': False,
+            'price': '193 970 ₽', 'is_current': False, 'is_base': False,
         },
     ]
 
@@ -243,6 +252,7 @@ def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
       </div>
     '''
     pages = {
+        '/catalog/sku/1379/': product_page('3502407', '1490'),
         '/catalog/sku/2178/': product_page('3502407UA', '1990'),
         '/catalog/sku/2179/': product_page('3502407UB', '2490'),
     }
@@ -266,6 +276,9 @@ def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
     assert [item['price'] for item in product.formatted_price_variants] == [
         '1 490 ₽', '1 990 ₽', '2 490 ₽',
     ]
+    assert product.url == 'https://pinel.ru/catalog/sku/1379/'
+    assert product.sku == '3502407'
+    assert product.qr_url == 'https://pinel.ru/catalog/sku/1379/'
 
 
 def test_pinel_display_name_removes_category_and_sku():

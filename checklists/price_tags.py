@@ -872,7 +872,7 @@ def select_product_properties(product, requested_names=(), max_properties=5):
     return product
 
 
-def import_product(url):
+def import_product(url, *, _resolve_pinel_base=True):
     html, final_url = _download(url)
     parser = _ProductHTMLParser()
     parser.feed(html)
@@ -943,7 +943,27 @@ def import_product(url):
     )
     hostname = (parse.urlsplit(final_url).hostname or '').casefold()
     if hostname == 'pinel.ru' or hostname.endswith('.pinel.ru'):
+        if not _resolve_pinel_base:
+            return imported
         imported.price_variants = _pinel_price_variants(
             html, final_url, imported.price, imported.currency, imported.sku,
         )
+        base_variant = next((
+            item for item in imported.price_variants
+            if item.get('is_base') and item.get('url')
+        ), None)
+        if base_variant:
+            base_path = parse.urlsplit(base_variant['url']).path.rstrip('/')
+            current_path = parse.urlsplit(final_url).path.rstrip('/')
+            if base_path != current_path:
+                try:
+                    base_product = import_product(
+                        base_variant['url'],
+                        _resolve_pinel_base=False,
+                    )
+                except ProductImportError:
+                    pass
+                else:
+                    base_product.price_variants = imported.price_variants
+                    return base_product
     return imported
