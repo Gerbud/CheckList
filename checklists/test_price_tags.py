@@ -361,6 +361,16 @@ def test_pinel_display_name_removes_category_and_sku():
     ) == 'Greenworks G24SL200'
 
 
+def test_pinel_display_name_keeps_model_when_it_matches_sku():
+    assert clean_pinel_display_name(
+        'Шуруповерт (дрель) Greenworks 24V HD56000 | HD56000',
+        'HD56000',
+        'Шуруповерт (дрель)',
+        '24V',
+        'HD56000',
+    ) == 'Greenworks HD56000'
+
+
 def test_warranty_years_are_formatted_for_price_tag():
     product = ImportedProduct(
         url='https://pinel.test/product/',

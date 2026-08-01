@@ -132,6 +132,7 @@ class ImportedProduct:
         if getattr(self.price_tag_profile, 'layout_template', '') == 'pinel':
             value = clean_pinel_display_name(
                 value, self.sku, self.secondary_name, self.voltage_text,
+                self.model,
             )
             return value
         if 'бокс' in self.secondary_name.casefold():
@@ -219,10 +220,20 @@ class ImportedProduct:
         return self.tracking_url or self.url
 
 
-def clean_pinel_display_name(value, sku='', category='', voltage=''):
+def clean_pinel_display_name(value, sku='', category='', voltage='', model=''):
     value = str(value).strip()
     if sku:
-        value = re.sub(re.escape(str(sku)), '', value, flags=re.IGNORECASE)
+        sku_pattern = re.escape(str(sku).strip())
+        value, suffix_removed = re.subn(
+            rf'\s*[|]\s*{sku_pattern}\s*$',
+            '', value, count=1, flags=re.IGNORECASE,
+        )
+        same_as_model = (
+            re.sub(r'\s+', '', str(model)).casefold()
+            == re.sub(r'\s+', '', str(sku)).casefold()
+        )
+        if not same_as_model:
+            value = re.sub(sku_pattern, '', value, flags=re.IGNORECASE)
     if category:
         value = re.sub(
             rf'^\s*{re.escape(str(category).strip())}\s*',

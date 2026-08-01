@@ -26,6 +26,12 @@
   .price-tag-layout-pinel .price-tag-voltage.series-60 { background: #10ae05; }
   .price-tag-layout-pinel .price-tag-voltage.series-82 { background: #ff1612; }
   .price-tag-layout-pinel .price-tag-voltage.series-220 { background: #242424; }
+  .price-tag-layout-pinel.series-20::before { background: #ff7900; }
+  .price-tag-layout-pinel.series-24::before { background: #b8f500; }
+  .price-tag-layout-pinel.series-40::before { background: #5b1b73; }
+  .price-tag-layout-pinel.series-60::before { background: #10ae05; }
+  .price-tag-layout-pinel.series-82::before { background: #ff1612; }
+  .price-tag-layout-pinel.series-220::before { background: #242424; }
   .price-tag-layout-pinel .price-tag-image,
   .price-tag-layout-pinel .price-tag-image-placeholder { grid-column: 3; width: 32mm; box-sizing: border-box; }
   .price-tag-store { font-size: 5mm; font-weight: 900; line-height: 1; }
@@ -95,6 +101,7 @@
   .price-tag.print-mode-monochrome .price-tag-promotion { background: #fff; color: #000; border-color: #000; }
   .price-tag.print-mode-monochrome .price-tag-warranty { background: #fff; color: #000; border-color: #000; }
   .price-tag.print-mode-monochrome .price-tag-voltage { background: #000; color: #fff; border-color: #000; }
+  .price-tag.print-mode-monochrome::before { background: #000 !important; }
   @media print {
     @page { size: A4 portrait; margin: 0; }
     body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
@@ -162,7 +169,7 @@
 {% if products %}<section class="price-tag-print-area" aria-label="Готовые ценники">
   <div class="price-tag-preview-toolbar d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника с безопасными полями</span></div>
   <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
-    {% with template=product.price_tag_profile %}<article class="price-tag price-tag-layout-{{ template.layout_template }} print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
+    {% with template=product.price_tag_profile %}<article class="price-tag price-tag-layout-{{ template.layout_template }} print-mode-{{ template.print_mode }}{% if template.layout_template == 'pinel' %} {{ product.voltage_series_class }}{% endif %}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
       <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
       <div class="price-tag-product"><div class="price-tag-type-line"><div class="price-tag-type">{{ product.price_tag_category_name }}</div>{% if template.layout_template == 'pinel' and product.voltage_text %}<div class="price-tag-voltage {{ product.voltage_series_class }}"><strong>{{ product.voltage_text }}</strong></div>{% endif %}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" data-source-url="{{ product.url }}" data-profile-id="{{ template.pk }}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-original-name="{{ product.original_name }}" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
       {% with variants=product.formatted_price_variants %}{% if variants %}<div class="price-tag-price-variants" aria-label="Цены комплектаций">{% for variant in variants %}<div class="price-tag-price-variant{% if variant.is_base %} is-base{% endif %}"><span>{{ variant.label }}</span><strong>{{ variant.price }}</strong></div>{% endfor %}</div>{% else %}<div class="price-tag-price">{{ product.formatted_price }}</div>{% endif %}{% endwith %}
