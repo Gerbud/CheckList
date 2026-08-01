@@ -637,16 +637,11 @@ def _pinel_search_variants(
         search_html, _ = _fetch_html(search_url)
     except ProductImportError:
         return []
-    products_marker = re.search(
-        r'search_page_text_caption[^>]*>\s*Товары\b',
-        search_html,
-        re.IGNORECASE,
-    )
-    products_html = (
-        search_html[products_marker.start():] if products_marker else search_html
-    )
     search_parser = _PinelSearchHTMLParser()
-    search_parser.feed(products_html)
+    # Parse the complete page. PINEL places the textual "Товары" marker in
+    # different positions depending on the server/CDN response. Exact SKU
+    # matching below safely removes recommendations and unrelated results.
+    search_parser.feed(search_html)
     search_parser.close()
     variants = []
     seen_urls = set()
