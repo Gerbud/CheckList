@@ -286,7 +286,8 @@ def test_pinel_display_name_removes_category_and_sku():
         'Фонарь Greenworks 24V G24SL200 | 3502407UA',
         '3502407UA',
         'Фонарь',
-    ) == 'Greenworks 24V G24SL200'
+        '24V',
+    ) == 'Greenworks G24SL200'
 
 
 def test_warranty_years_are_formatted_for_price_tag():
@@ -903,6 +904,8 @@ def test_mixed_domains_automatically_use_their_own_profiles(
     assert 'PINEL · Газонокосилки PINEL' in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
+    assert 'grid-template-columns: minmax(0, 1fr) 27mm' in content
+    assert 'font-variant-numeric: tabular-nums' in content
     assert '75 000 ₽' in content
     assert content.count('class="price-tag-name" contenteditable="true"') == 2
 
@@ -957,8 +960,9 @@ def test_missing_pinel_category_is_created_automatically(
         'Вольтаж', 'Модель', 'Гарантия, (лет)',
     ]
     assert 'Не определена категория' not in content
-    assert 'Greenworks 24V G24SL200' in content
+    assert '>Greenworks G24SL200</div>' in content
     assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
+    assert '<strong>24V</strong><span>серия</span>' in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
     assert 'class="price-tag-warranty"' in content

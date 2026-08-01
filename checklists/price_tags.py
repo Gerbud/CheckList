@@ -75,13 +75,12 @@ class ImportedProduct:
 
     @property
     def prominent_name(self):
-        if self.suggested_name:
-            return self.suggested_name
-        value = self.name
+        value = self.suggested_name or self.name
         if getattr(self.price_tag_profile, 'layout_template', '') == 'pinel':
             value = clean_pinel_display_name(
-                value, self.sku, self.secondary_name,
+                value, self.sku, self.secondary_name, self.voltage_text,
             )
+            return value
         if 'бокс' in self.secondary_name.casefold():
             return clean_box_display_name(value, self.properties)
         return value
@@ -106,6 +105,15 @@ class ImportedProduct:
                 if name.casefold().strip().rstrip(':') in preferred_names:
                     return value
         return self.brand
+
+    @property
+    def voltage_text(self):
+        for name, value in self.properties:
+            normalized = name.casefold().strip().rstrip(':')
+            if normalized in {'вольтаж', 'напряжение'}:
+                return str(value).strip()
+        match = re.search(r'(?<!\w)(\d{1,3}\s*[VВ])\b', self.name, re.IGNORECASE)
+        return re.sub(r'\s+', '', match.group(1)).upper() if match else ''
 
     @property
     def warranty_text(self):
@@ -143,13 +151,18 @@ class ImportedProduct:
         return self.tracking_url or self.url
 
 
-def clean_pinel_display_name(value, sku='', category=''):
+def clean_pinel_display_name(value, sku='', category='', voltage=''):
     value = str(value).strip()
     if sku:
         value = re.sub(re.escape(str(sku)), '', value, flags=re.IGNORECASE)
     if category:
         value = re.sub(
             rf'^\s*{re.escape(str(category).strip())}\s*',
+            '', value, flags=re.IGNORECASE,
+        )
+    if voltage:
+        value = re.sub(
+            rf'(?<!\w){re.escape(str(voltage).strip())}(?!\w)',
             '', value, flags=re.IGNORECASE,
         )
     value = re.sub(r'\s*[|]​?\s*$', '', value)
