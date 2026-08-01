@@ -2,6 +2,7 @@ import csv
 import json
 from datetime import date, timedelta
 from io import StringIO
+from urllib import parse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.contrib import messages
@@ -137,6 +138,7 @@ from checklists.price_tags import (
     apply_category_rules,
     build_qr_url,
     import_product,
+    render_qr_svg,
 )
 from checklists.shift_calendar import (
     SHIFT_CELL_META,
@@ -1625,11 +1627,26 @@ def price_tags(request):
                 for index in range(0, len(products), 4)
             ],
             'import_errors': import_errors,
+            'printed_on': _store_today(store),
             'can_edit_template': (
                 is_system_admin(request.user) or is_store_director(request.user)
             ),
         },
     )
+
+
+@price_tag_tool_required
+def price_tag_qr(request):
+    value = request.GET.get('data', '').strip()
+    parts = parse.urlsplit(value)
+    if (
+        not value
+        or len(value) > 2000
+        or parts.scheme not in {'http', 'https'}
+        or not parts.netloc
+    ):
+        return HttpResponse('Некорректная ссылка QR-кода.', status=400)
+    return HttpResponse(render_qr_svg(value), content_type='image/svg+xml')
 
 
 @price_tag_tool_required

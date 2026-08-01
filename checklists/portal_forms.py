@@ -836,7 +836,7 @@ class StorePriceTagTemplateForm(forms.ModelForm):
             'qr_utm_parameters', 'print_mode',
         )
         widgets = {
-            'logo': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'logo': forms.FileInput(attrs={'class': 'form-control'}),
             'heading': forms.TextInput(attrs={'class': 'form-control'}),
             'primary_color': forms.TextInput(attrs={
                 'type': 'color', 'class': 'form-control form-control-color',

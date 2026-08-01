@@ -2,6 +2,7 @@ import ipaddress
 import json
 import re
 import socket
+from io import BytesIO
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
@@ -49,7 +50,10 @@ class ImportedProduct:
     @property
     def prominent_name(self):
         value = ' '.join(item for item in (self.brand, self.model) if item).strip()
-        return value or self.name
+        value = value or self.name
+        if 'бокс' in self.secondary_name.casefold():
+            return clean_box_display_name(value, self.properties)
+        return value
 
     @property
     def secondary_name(self):
@@ -73,6 +77,44 @@ def build_qr_url(url, utm_parameters=''):
     ]
     query = parse.urlencode([*existing, *tracking])
     return parse.urlunsplit(parts._replace(query=query))
+
+
+def render_qr_svg(value):
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+
+    image = qrcode.make(
+        value,
+        image_factory=SvgPathImage,
+        box_size=10,
+        border=2,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+    )
+    output = BytesIO()
+    image.save(output)
+    return output.getvalue()
+
+
+def clean_box_display_name(value, properties=()):
+    value = str(value).strip()
+    color_values = [
+        property_value for property_name, property_value in properties
+        if property_name.casefold().strip().rstrip(':') in {
+            'цвет', 'цвет товара', 'цвет корпуса',
+        }
+    ]
+    for color_value in color_values:
+        value = re.sub(re.escape(str(color_value)), '', value, flags=re.I)
+    color_pattern = (
+        r'\b(?:белый|ч[её]рный|серый|серебристый|графитовый|красный|синий|'
+        r'зел[её]ный|коричневый|бежевый|оранжевый)'
+        r'(?:\s+(?:матовый|глянцевый|карбон|металлик|aeroskin|аэроскин))?\b'
+    )
+    value = re.sub(color_pattern, '', value, flags=re.I)
+    value = re.sub(r'\s+', ' ', value)
+    value = re.sub(r'\s*,\s*(?=$)', '', value)
+    value = re.sub(r'\s+([,)])', r'\1', value)
+    return value.strip(' ,—-')
 
 
 class _ProductHTMLParser(HTMLParser):

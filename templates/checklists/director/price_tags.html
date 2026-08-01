@@ -27,9 +27,7 @@
   .price-tag-property strong { text-align: right; overflow-wrap: anywhere; }
   .price-tag-footer { margin-top: auto; min-height: 19mm; padding-right: 22mm; display: flex; align-items: end; justify-content: space-between; gap: 3mm; color: #64748b; font-size: 2.6mm; }
   .price-tag-qr { position: absolute; right: 6mm; bottom: 5mm; width: 19mm; height: 19mm; padding: 1mm; background: #fff; border: .25mm solid #e2e8f0; }
-  .price-tag-qr canvas { width: 17mm !important; height: 17mm !important; display: block; }
-  .price-tag-qr-error { display: none; font-size: 2mm; line-height: 1.1; text-align: center; color: #000; }
-  .price-tag-qr.is-error .price-tag-qr-error { display: block; }
+  .price-tag-qr-image { width: 17mm; height: 17mm; display: block; }
   .print-mode-monochrome .price-tag-logo,
   .print-mode-monochrome .price-tag-image { filter: grayscale(1) contrast(1.15); }
   .print-mode-monochrome .price-tag { border-color: #000; color: #000; }
@@ -97,26 +95,8 @@
       <div class="price-tag-product"><div class="price-tag-type">{{ product.secondary_name }}</div><div class="price-tag-name">{{ product.prominent_name }}</div>{% if price_tag_template.show_sku and product.sku %}<div class="price-tag-sku">Артикул: {{ product.sku }}</div>{% endif %}</div>
       <div class="price-tag-price">{{ product.formatted_price }}</div>
       {% if price_tag_template.show_properties and product.displayed_properties %}<div class="price-tag-properties">{% for name, value in product.displayed_properties %}<div class="price-tag-property"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
-      <footer class="price-tag-footer"><span>{{ price_tag_template.footer|default:store.name }}</span><span>{% if product.category_rule %}{{ product.category_rule.name }}{% else %}{{ product.source_name }}{% endif %}</span></footer><div class="price-tag-qr" data-qr-url="{{ product.qr_url }}" title="{{ product.qr_url }}" aria-label="QR-код товара"><span class="price-tag-qr-error">QR не создан</span></div>
+      <footer class="price-tag-footer"><span>{{ price_tag_template.footer|default:store.name }}</span><span>Дата печати: {{ printed_on|date:"d.m.Y" }}</span></footer><a class="price-tag-qr" href="{{ product.qr_url }}" aria-label="Открыть страницу товара"><img class="price-tag-qr-image" src="{% url 'checklists:price_tag_qr' %}?data={{ product.qr_url|urlencode }}" alt="QR-код товара"></a>
     </article>
   {% endfor %}</div>{% endfor %}</div>
 </section>{% endif %}
-{% if products %}<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script><script>
-window.addEventListener('load', function () {
-  document.querySelectorAll('[data-qr-url]').forEach(function (node) {
-    if (typeof QRCode === 'undefined') {
-      node.classList.add('is-error');
-      return;
-    }
-    QRCode.toCanvas(node.dataset.qrUrl, { width: 192, margin: 2, errorCorrectionLevel: 'M' }, function (error, canvas) {
-      if (error) {
-        node.classList.add('is-error');
-        return;
-      }
-      canvas.setAttribute('aria-hidden', 'true');
-      node.appendChild(canvas);
-    });
-  });
-});
-</script>{% endif %}
 {% endblock %}

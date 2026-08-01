@@ -121,7 +121,8 @@ def test_director_can_generate_and_edit_store_profile(
     assert 'Тестовый автобокс' in content
     assert '50 000 ₽' in content
     assert 'На листе A4 будет 4 ценника' in content
-    assert 'data-qr-url="https://example.test/product/1/"' in content
+    assert 'price-tags/qr/?data=https%3A//example.test/product/1/' in content
+    assert 'Дата печати:' in content
     saved = client.post(
         reverse('checklists:price_tag_profile'),
         {
@@ -169,6 +170,55 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     assert template.print_mode == StorePriceTagTemplate.PrintMode.MONOCHROME
 
 
+def test_profile_shows_uploaded_logo_preview(client, price_tag_setup):
+    template = StorePriceTagTemplate.objects.create(
+        store=price_tag_setup['store'],
+    )
+    template.logo.name = 'stores/price_tag_logo/es-auto.png'
+    template.save(update_fields=('logo',))
+    client.force_login(price_tag_setup['director'])
+
+    response = client.get(reverse('checklists:price_tag_profile'))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'src="/media/stores/price_tag_logo/es-auto.png"' in content
+    assert 'alt="Логотип Магазин ценников"' in content
+    assert 'Currently:' not in content
+
+
+def test_qr_endpoint_returns_server_generated_svg(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        'checklists.portal_views.render_qr_svg',
+        lambda value: f'<svg><title>{value}</title></svg>'.encode(),
+    )
+    client.force_login(price_tag_setup['director'])
+
+    response = client.get(
+        reverse('checklists:price_tag_qr'),
+        {'data': 'https://example.test/product/?utm_source=price_tag'},
+    )
+
+    assert response.status_code == 200
+    assert response['Content-Type'] == 'image/svg+xml'
+    assert b'utm_source=price_tag' in response.content
+
+
+def test_qr_endpoint_rejects_non_web_url(client, price_tag_setup):
+    client.force_login(price_tag_setup['director'])
+
+    response = client.get(
+        reverse('checklists:price_tag_qr'),
+        {'data': 'javascript:alert(1)'},
+    )
+
+    assert response.status_code == 400
+
+
 def test_qr_url_keeps_product_parameters_and_applies_store_utm():
     result = build_qr_url(
         'https://example.test/product/?variant=white&utm_source=old#details',
@@ -213,9 +263,10 @@ def test_monochrome_price_tag_uses_utm_qr_and_header_photo(
     assert 'class="price-tag-image"' in content
     assert 'width: 44mm; height: 23mm' in content
     assert (
-        'data-qr-url="https://example.test/product/?variant=white&amp;'
-        'utm_source=price_tag&amp;utm_medium=offline"'
+        'price-tags/qr/?data=https%3A//example.test/product/%3Fvariant%3Dwhite%26'
+        'utm_source%3Dprice_tag%26utm_medium%3Doffline'
     ) in content
+    assert '>Боксы<' not in content
 
 
 def test_terminal_account_can_open_tool_and_manage_category(client, price_tag_setup):
@@ -295,9 +346,7 @@ def test_seo_product_name_is_cleaned_without_losing_variant():
         _product_identity({}, product.name, [], {})
     )
     assert product.secondary_name == 'Бокс на крышу'
-    assert product.prominent_name == (
-        'Element 590 белый карбон (скоба), Белый матовый'
-    )
+    assert product.prominent_name == 'Element 590 (скоба)'
 
 
 def test_four_price_tags_are_grouped_on_one_a4_sheet(
