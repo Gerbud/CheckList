@@ -79,6 +79,14 @@ def build_qr_url(url, utm_parameters=''):
     return parse.urlunsplit(parts._replace(query=query))
 
 
+def site_url_matches(url, domain):
+    if not domain:
+        return True
+    hostname = (parse.urlsplit(url).hostname or '').casefold().removeprefix('www.')
+    domain = domain.casefold().removeprefix('www.')
+    return hostname == domain or hostname.endswith(f'.{domain}')
+
+
 def render_qr_svg(value):
     import qrcode
     from qrcode.image.svg import SvgPathImage
@@ -378,14 +386,17 @@ def clean_product_name(value):
 
 
 def apply_category_rules(product, categories, max_properties=5):
-    haystack = ' '.join((
-        product.name,
-        product.product_type,
-        product.category_name,
-    )).casefold()
+    parts = parse.urlsplit(product.url)
+    path = parse.unquote(parts.path).casefold()
+    full_url = parse.unquote(product.url).casefold()
     matched = None
     for category in categories:
-        if any(keyword.casefold() in haystack for keyword in category.keyword_list):
+        if any(
+            pattern.casefold() in (
+                full_url if '://' in pattern else path
+            )
+            for pattern in category.url_pattern_list
+        ):
             matched = category
             break
     product.category_rule = matched

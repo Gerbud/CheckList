@@ -795,6 +795,11 @@ class ReopenStageForm(forms.Form):
 
 
 class PriceTagLinksForm(forms.Form):
+    profile = forms.ModelChoiceField(
+        label='Интернет-магазин',
+        queryset=StorePriceTagTemplate.objects.none(),
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
     urls = forms.CharField(
         label='Ссылки на товары',
         help_text='Каждая ссылка с новой строки. Максимум 20 товаров.',
@@ -804,6 +809,13 @@ class PriceTagLinksForm(forms.Form):
             'placeholder': 'https://example.ru/product/123/\nhttps://example.ru/product/456/',
         }),
     )
+
+    def __init__(self, *args, profiles=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        profile_ids = [profile.pk for profile in profiles]
+        self.fields['profile'].queryset = StorePriceTagTemplate.objects.filter(
+            pk__in=profile_ids,
+        ).order_by('name', 'id')
 
     def clean_urls(self):
         urls = [line.strip() for line in self.cleaned_data['urls'].splitlines()]
@@ -816,6 +828,15 @@ class PriceTagLinksForm(forms.Form):
 
 
 class StorePriceTagTemplateForm(forms.ModelForm):
+    def clean_site_domain(self):
+        value = self.cleaned_data['site_domain'].strip().casefold()
+        if '://' in value:
+            value = parse.urlsplit(value).hostname or ''
+        value = value.strip().strip('/')
+        if not value or '/' in value or ' ' in value or '.' not in value:
+            raise forms.ValidationError('Укажите домен, например es-auto.ru.')
+        return value.removeprefix('www.')
+
     def clean_qr_utm_parameters(self):
         value = self.cleaned_data['qr_utm_parameters'].strip().lstrip('?')
         if not value:
@@ -831,11 +852,18 @@ class StorePriceTagTemplateForm(forms.ModelForm):
     class Meta:
         model = StorePriceTagTemplate
         fields = (
-            'logo', 'heading', 'primary_color', 'accent_color', 'show_image',
+            'name', 'site_domain', 'logo', 'heading',
+            'primary_color', 'accent_color', 'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
-            'qr_utm_parameters', 'print_mode',
+            'qr_utm_parameters', 'print_mode', 'is_active',
         )
         widgets = {
+            'name': forms.TextInput(attrs={
+                'class': 'form-control', 'placeholder': 'ES-AUTO',
+            }),
+            'site_domain': forms.TextInput(attrs={
+                'class': 'form-control', 'placeholder': 'es-auto.ru',
+            }),
             'logo': forms.FileInput(attrs={'class': 'form-control'}),
             'heading': forms.TextInput(attrs={'class': 'form-control'}),
             'primary_color': forms.TextInput(attrs={
@@ -874,12 +902,12 @@ class StorePriceTagCategoryForm(forms.ModelForm):
 
     class Meta:
         model = StorePriceTagCategory
-        fields = ('name', 'keywords', 'property_names', 'sort_order', 'is_active')
+        fields = ('name', 'url_patterns', 'property_names', 'sort_order', 'is_active')
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'keywords': forms.TextInput(attrs={
+            'url_patterns': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'газонокосилка, lawn mower',
+                'placeholder': '/car-box/, /snow-blowers/',
             }),
             'sort_order': forms.NumberInput(attrs={'class': 'form-control'}),
         }

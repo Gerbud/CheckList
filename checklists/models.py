@@ -65,11 +65,22 @@ class StorePriceTagTemplate(models.Model):
         r'^#[0-9A-Fa-f]{6}$',
         'Укажите цвет в формате #112233.',
     )
-    store = models.OneToOneField(
+    store = models.ForeignKey(
         Store,
         verbose_name='магазин',
         on_delete=models.CASCADE,
-        related_name='price_tag_template',
+        related_name='price_tag_templates',
+    )
+    name = models.CharField(
+        'название интернет-магазина',
+        max_length=120,
+        default='ES-AUTO',
+    )
+    site_domain = models.CharField(
+        'домен сайта',
+        max_length=255,
+        default='es-auto.ru',
+        help_text='Например: es-auto.ru или pinel.ru.',
     )
     logo = models.ImageField(
         'логотип для ценников',
@@ -133,27 +144,35 @@ class StorePriceTagTemplate(models.Model):
         choices=PrintMode.choices,
         default=PrintMode.COLOR,
     )
+    is_active = models.BooleanField('активен', default=True)
     updated_at = models.DateTimeField('изменён', auto_now=True)
 
     class Meta:
         verbose_name = 'шаблон ценника'
         verbose_name_plural = 'шаблоны ценников'
+        ordering = ('name', 'id')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('store', 'site_domain'),
+                name='unique_price_tag_profile_store_domain',
+            ),
+        ]
 
     def __str__(self):
-        return f'Ценники: {self.store.name}'
+        return f'{self.store.name}: {self.name}'
 
 
 class StorePriceTagCategory(models.Model):
-    store = models.ForeignKey(
-        Store,
-        verbose_name='магазин',
+    profile = models.ForeignKey(
+        StorePriceTagTemplate,
+        verbose_name='профиль интернет-магазина',
         on_delete=models.CASCADE,
-        related_name='price_tag_categories',
+        related_name='categories',
     )
     name = models.CharField('категория', max_length=120)
-    keywords = models.TextField(
-        'слова для распознавания',
-        help_text='Через запятую: газонокосилка, lawn mower.',
+    url_patterns = models.TextField(
+        'фрагменты адреса категории',
+        help_text='Через запятую: /car-box/, /snow-blowers/.',
     )
     property_names = models.TextField(
         'свойства на ценнике',
@@ -169,21 +188,26 @@ class StorePriceTagCategory(models.Model):
         ordering = ('sort_order', 'name', 'id')
         constraints = [
             models.UniqueConstraint(
-                fields=('store', 'name'),
-                name='unique_price_tag_category_store',
+                fields=('profile', 'name'),
+                name='unique_price_tag_category_profile',
             ),
         ]
 
     @property
-    def keyword_list(self):
-        return [item.strip() for item in self.keywords.split(',') if item.strip()]
+    def url_pattern_list(self):
+        return [
+            item.strip()
+            for line in self.url_patterns.splitlines()
+            for item in line.split(',')
+            if item.strip()
+        ]
 
     @property
     def property_name_list(self):
         return [item.strip() for item in self.property_names.splitlines() if item.strip()]
 
     def __str__(self):
-        return f'{self.store.name}: {self.name}'
+        return f'{self.profile.name}: {self.name}'
 
 
 SCHEDULE_CHANGE_HELP = (
