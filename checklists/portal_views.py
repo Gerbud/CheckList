@@ -1795,6 +1795,7 @@ def price_tag_name_correction(request):
     corrected_name = request.POST.get('corrected_name', '').strip()
     if (
         not site_url_matches(source_url, profile.site_domain)
+        or len(source_url) > 500
         or not original_name
         or not corrected_name
         or len(original_name) > 500

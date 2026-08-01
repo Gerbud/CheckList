@@ -291,7 +291,7 @@ class PriceTagNameCorrection(models.Model):
         on_delete=models.CASCADE,
         related_name='name_corrections',
     )
-    source_url = models.URLField('ссылка товара', max_length=2000)
+    source_url = models.URLField('ссылка товара', max_length=500)
     original_name = models.CharField('исходное название', max_length=500)
     corrected_name = models.CharField('исправленное название', max_length=500)
     created_by = models.ForeignKey(

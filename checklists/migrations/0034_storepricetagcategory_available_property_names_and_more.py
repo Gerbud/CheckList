@@ -54,7 +54,7 @@ class Migration(migrations.Migration):
             name='PriceTagNameCorrection',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('source_url', models.URLField(max_length=2000, verbose_name='ссылка товара')),
+                ('source_url', models.URLField(max_length=500, verbose_name='ссылка товара')),
                 ('original_name', models.CharField(max_length=500, verbose_name='исходное название')),
                 ('corrected_name', models.CharField(max_length=500, verbose_name='исправленное название')),
                 ('use_count', models.PositiveIntegerField(default=0, verbose_name='использований')),
