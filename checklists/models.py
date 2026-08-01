@@ -57,6 +57,10 @@ class Store(models.Model):
 
 
 class StorePriceTagTemplate(models.Model):
+    class PrintMode(models.TextChoices):
+        COLOR = 'color', 'Цветной принтер'
+        MONOCHROME = 'monochrome', 'Чёрно-белый принтер'
+
     color_validator = RegexValidator(
         r'^#[0-9A-Fa-f]{6}$',
         'Укажите цвет в формате #112233.',
@@ -112,6 +116,22 @@ class StorePriceTagTemplate(models.Model):
         max_length=120,
         blank=True,
         default='',
+    )
+    qr_utm_parameters = models.CharField(
+        'UTM-параметры для QR-кода',
+        max_length=500,
+        blank=True,
+        default='',
+        help_text=(
+            'Например: utm_source=price_tag&utm_medium=offline. '
+            'Параметры добавятся к ссылке товара в QR-коде.'
+        ),
+    )
+    print_mode = models.CharField(
+        'режим печати',
+        max_length=20,
+        choices=PrintMode.choices,
+        default=PrintMode.COLOR,
     )
     updated_at = models.DateTimeField('изменён', auto_now=True)
 

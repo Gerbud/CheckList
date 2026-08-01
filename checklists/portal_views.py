@@ -135,6 +135,7 @@ from checklists.portal_forms import (
 from checklists.price_tags import (
     ProductImportError,
     apply_category_rules,
+    build_qr_url,
     import_product,
 )
 from checklists.shift_calendar import (
@@ -1571,11 +1572,16 @@ def price_tags(request):
         if links_form.is_valid():
             for url in links_form.cleaned_data['urls']:
                 try:
-                    products.append(apply_category_rules(
+                    product = apply_category_rules(
                         import_product(url),
                         [item for item in categories if item.is_active],
                         template.max_properties,
-                    ))
+                    )
+                    product.tracking_url = build_qr_url(
+                        product.url,
+                        template.qr_utm_parameters,
+                    )
+                    products.append(product)
                 except ProductImportError as exc:
                     import_errors.append({'url': url, 'message': str(exc)})
             discovered = list(dict.fromkeys([

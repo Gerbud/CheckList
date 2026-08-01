@@ -10,6 +10,7 @@ from checklists.models import (
 from checklists.price_tags import (
     ImportedProduct,
     apply_category_rules,
+    build_qr_url,
     clean_product_name,
     import_product,
 )
@@ -128,6 +129,7 @@ def test_director_can_generate_and_edit_store_profile(
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'max_properties': 4,
+            'print_mode': StorePriceTagTemplate.PrintMode.COLOR,
         },
     )
     assert saved.status_code == 302
@@ -154,6 +156,8 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
             'show_properties': 'on',
             'max_properties': 4,
             'footer': 'Цена действительна на дату печати',
+            'qr_utm_parameters': 'utm_source=price_tag&utm_medium=offline',
+            'print_mode': StorePriceTagTemplate.PrintMode.MONOCHROME,
         },
     )
 
@@ -161,6 +165,57 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     template = StorePriceTagTemplate.objects.get(store=price_tag_setup['store'])
     assert template.heading == 'Лучшая цена'
     assert template.max_properties == 4
+    assert template.qr_utm_parameters == 'utm_source=price_tag&utm_medium=offline'
+    assert template.print_mode == StorePriceTagTemplate.PrintMode.MONOCHROME
+
+
+def test_qr_url_keeps_product_parameters_and_applies_store_utm():
+    result = build_qr_url(
+        'https://example.test/product/?variant=white&utm_source=old#details',
+        'utm_source=price_tag&utm_medium=offline',
+    )
+
+    assert result == (
+        'https://example.test/product/?variant=white&utm_source=price_tag'
+        '&utm_medium=offline#details'
+    )
+
+
+def test_monochrome_price_tag_uses_utm_qr_and_header_photo(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    StorePriceTagTemplate.objects.create(
+        store=price_tag_setup['store'],
+        print_mode=StorePriceTagTemplate.PrintMode.MONOCHROME,
+        qr_utm_parameters='utm_source=price_tag&utm_medium=offline',
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url='https://example.test/product/?variant=white',
+            name='Бокс Element 590',
+            image_url='https://example.test/product.jpg',
+        ),
+    )
+    client.force_login(price_tag_setup['director'])
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/product/'},
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'print-mode-monochrome' in content
+    assert 'class="price-tag-head"' in content
+    assert 'class="price-tag-image"' in content
+    assert 'width: 44mm; height: 23mm' in content
+    assert (
+        'data-qr-url="https://example.test/product/?variant=white&amp;'
+        'utm_source=price_tag&amp;utm_medium=offline"'
+    ) in content
 
 
 def test_terminal_account_can_open_tool_and_manage_category(client, price_tag_setup):

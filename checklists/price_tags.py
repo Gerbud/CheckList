@@ -32,6 +32,7 @@ class ImportedProduct:
     category_name: str = ''
     displayed_properties: list = field(default_factory=list)
     category_rule: object = None
+    tracking_url: str = ''
 
     @property
     def formatted_price(self):
@@ -53,6 +54,25 @@ class ImportedProduct:
     @property
     def secondary_name(self):
         return self.product_type or self.category_name or 'Товар'
+
+    @property
+    def qr_url(self):
+        return self.tracking_url or self.url
+
+
+def build_qr_url(url, utm_parameters=''):
+    """Add store tracking parameters without losing a product query string."""
+    if not utm_parameters:
+        return url
+    parts = parse.urlsplit(url)
+    tracking = parse.parse_qsl(utm_parameters.lstrip('?'), keep_blank_values=True)
+    tracking_keys = {key for key, _ in tracking}
+    existing = [
+        pair for pair in parse.parse_qsl(parts.query, keep_blank_values=True)
+        if pair[0] not in tracking_keys
+    ]
+    query = parse.urlencode([*existing, *tracking])
+    return parse.urlunsplit(parts._replace(query=query))
 
 
 class _ProductHTMLParser(HTMLParser):

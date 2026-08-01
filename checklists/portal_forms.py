@@ -1,3 +1,5 @@
+from urllib import parse
+
 from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
@@ -814,11 +816,24 @@ class PriceTagLinksForm(forms.Form):
 
 
 class StorePriceTagTemplateForm(forms.ModelForm):
+    def clean_qr_utm_parameters(self):
+        value = self.cleaned_data['qr_utm_parameters'].strip().lstrip('?')
+        if not value:
+            return ''
+        pairs = parse.parse_qsl(value, keep_blank_values=True)
+        if not pairs or any(not key.startswith('utm_') for key, _ in pairs):
+            raise forms.ValidationError(
+                'Укажите UTM-параметры в формате '
+                'utm_source=price_tag&utm_medium=offline.'
+            )
+        return parse.urlencode(pairs)
+
     class Meta:
         model = StorePriceTagTemplate
         fields = (
             'logo', 'heading', 'primary_color', 'accent_color', 'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
+            'qr_utm_parameters', 'print_mode',
         )
         widgets = {
             'logo': forms.ClearableFileInput(attrs={'class': 'form-control'}),
@@ -831,6 +846,11 @@ class StorePriceTagTemplateForm(forms.ModelForm):
             }),
             'max_properties': forms.NumberInput(attrs={'class': 'form-control'}),
             'footer': forms.TextInput(attrs={'class': 'form-control'}),
+            'qr_utm_parameters': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'utm_source=price_tag&utm_medium=offline',
+            }),
+            'print_mode': forms.Select(attrs={'class': 'form-select'}),
         }
 
 
