@@ -13,14 +13,20 @@
   .price-tag-head { min-height: 27mm; display: grid; grid-template-columns: minmax(0, 1fr) 40mm; align-items: center; gap: 3mm; padding-bottom: 1.5mm; border-bottom: .3mm solid #e2e8f0; color: var(--tag-primary); }
   .price-tag-brand { min-width: 0; }
   .price-tag-logo { width: 38mm; height: 23mm; display: block; object-fit: contain; object-position: left center; }
-  .price-tag-layout-pinel .price-tag-head { grid-template-columns: 31mm minmax(0, 1fr) 30mm; gap: 2mm; }
+  .price-tag-layout-pinel .price-tag-head { grid-template-columns: 31mm minmax(0, 1fr) 32mm; gap: 2mm; position: relative; }
   .price-tag-layout-pinel .price-tag-brand { grid-column: 1; }
   .price-tag-layout-pinel .price-tag-logo { width: 30mm; }
-  .price-tag-layout-pinel .price-tag-voltage { grid-column: 2; min-width: 17mm; min-height: 14mm; box-sizing: border-box; padding: 1.2mm 1mm; border: .45mm solid var(--tag-primary); border-radius: 3mm; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--tag-primary); color: #fff; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .price-tag-layout-pinel .price-tag-voltage strong { font-size: 5.8mm; line-height: .9; font-weight: 950; white-space: nowrap; }
-  .price-tag-layout-pinel .price-tag-voltage span { margin-top: .9mm; font-size: 1.75mm; line-height: 1.05; font-weight: 850; letter-spacing: .05mm; text-transform: uppercase; }
+  .price-tag-layout-pinel .price-tag-voltage { position: absolute; z-index: 2; top: 0; right: 0; min-width: 17mm; box-sizing: border-box; padding: 1.1mm 1.7mm .9mm; border-radius: 1.6mm; display: flex; align-items: baseline; justify-content: center; gap: .7mm; background: #172554; color: #fff; box-shadow: 0 .6mm 1.5mm rgba(15,23,42,.18); text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .price-tag-layout-pinel .price-tag-voltage strong { font-size: 4.8mm; line-height: 1; font-weight: 950; white-space: nowrap; }
+  .price-tag-layout-pinel .price-tag-voltage span { font-size: 1.75mm; line-height: 1; font-weight: 800; letter-spacing: .08mm; text-transform: uppercase; }
+  .price-tag-layout-pinel .price-tag-voltage.series-20 { background: #ff7900; }
+  .price-tag-layout-pinel .price-tag-voltage.series-24 { background: #b8f500; color: #263200; }
+  .price-tag-layout-pinel .price-tag-voltage.series-40 { background: #5b1b73; }
+  .price-tag-layout-pinel .price-tag-voltage.series-60 { background: #10ae05; }
+  .price-tag-layout-pinel .price-tag-voltage.series-82 { background: #ff1612; }
+  .price-tag-layout-pinel .price-tag-voltage.series-220 { background: #242424; }
   .price-tag-layout-pinel .price-tag-image,
-  .price-tag-layout-pinel .price-tag-image-placeholder { grid-column: 3; width: 30mm; }
+  .price-tag-layout-pinel .price-tag-image-placeholder { grid-column: 3; width: 32mm; padding-top: 4mm; box-sizing: border-box; }
   .price-tag-store { font-size: 5mm; font-weight: 900; line-height: 1; }
   .price-tag-product { height: 29mm; min-height: 29mm; margin-top: 2mm; display: flex; flex-direction: column; overflow: hidden; }
   .price-tag-name { font-size: 6mm; line-height: 1.03; letter-spacing: -.08mm; font-weight: 950; color: var(--tag-primary); max-height: 20mm; overflow: hidden; }
@@ -130,6 +136,7 @@
       {{ links_form.urls }}
       {% for error in links_form.urls.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
       <div class="form-text">{{ links_form.urls.help_text }}</div>
+      {% if can_edit_template %}<label class="form-check mt-3 p-3 ps-5 border rounded-3 bg-light" for="force-refresh"><input class="form-check-input" id="force-refresh" type="checkbox" name="force_refresh" value="1"><span class="form-check-label fw-semibold">Загрузить свежие данные с сайта</span><span class="d-block small text-secondary">Игнорировать кеш и заново запросить товар, цены и комплектации PINEL.</span></label>{% endif %}
       <button class="btn btn-primary mt-3" type="submit">Создать ценники</button>
     </form>
   </div>
@@ -155,7 +162,7 @@
   <div class="price-tag-preview-toolbar d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника с безопасными полями</span></div>
   <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
     {% with template=product.price_tag_profile %}<article class="price-tag price-tag-layout-{{ template.layout_template }} print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
-      <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}</div>{% if template.layout_template == 'pinel' and product.voltage_text %}<div class="price-tag-voltage"><strong>{{ product.voltage_text }}</strong><span>аккумуляторная<br>серия</span></div>{% endif %}{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
+      <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}</div>{% if template.layout_template == 'pinel' and product.voltage_text %}<div class="price-tag-voltage {{ product.voltage_series_class }}"><strong>{{ product.voltage_text }}</strong><span>серия</span></div>{% endif %}{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
       <div class="price-tag-product"><div class="price-tag-type">{{ product.price_tag_category_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" data-source-url="{{ product.url }}" data-profile-id="{{ template.pk }}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-original-name="{{ product.original_name }}" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
       {% with variants=product.formatted_price_variants %}{% if variants %}<div class="price-tag-price-variants" aria-label="Цены комплектаций">{% for variant in variants %}<div class="price-tag-price-variant{% if variant.is_base %} is-base{% endif %}"><span>{{ variant.label }}</span><strong>{{ variant.price }}</strong></div>{% endfor %}</div>{% else %}<div class="price-tag-price">{{ product.formatted_price }}</div>{% endif %}{% endwith %}
       {% if template.show_properties and product.property_rows %}<div class="price-tag-properties">{% for name, value, selected in product.property_rows %}<div class="price-tag-property{% if not selected %} d-none{% endif %}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-property-name="{{ name }}"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}

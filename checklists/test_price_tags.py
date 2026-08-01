@@ -1001,12 +1001,46 @@ def test_missing_pinel_category_is_created_automatically(
     assert 'Не определена категория' not in content
     assert '>Greenworks G24SL200</div>' in content
     assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
-    assert '<strong>24V</strong><span>аккумуляторная<br>серия</span>' in content
+    assert 'class="price-tag-voltage series-24"' in content
+    assert '<strong>24V</strong><span>серия</span>' in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
     assert 'class="price-tag-warranty"' in content
     assert '3 года' in content
     assert 'Магазин и сервис — в одном месте' in content
+
+
+def test_only_admin_roles_can_force_price_tag_refresh(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    calls = []
+
+    def fake_import(url, **kwargs):
+        calls.append(kwargs)
+        return ImportedProduct(url=url, name='Тестовый товар', price='1000')
+
+    monkeypatch.setattr('checklists.portal_views.import_product', fake_import)
+    url = 'https://example.test/product/refresh/'
+
+    client.force_login(price_tag_setup['terminal'])
+    terminal_response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': url, 'force_refresh': '1'},
+    )
+    assert terminal_response.status_code == 200
+    assert calls[-1] == {}
+    assert 'Загрузить свежие данные с сайта' not in terminal_response.content.decode()
+
+    client.force_login(price_tag_setup['director'])
+    director_response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': url, 'force_refresh': '1'},
+    )
+    assert director_response.status_code == 200
+    assert calls[-1] == {'force_refresh': True}
+    assert 'Загрузить свежие данные с сайта' in director_response.content.decode()
 
 
 def test_seo_product_name_is_cleaned_without_losing_variant():

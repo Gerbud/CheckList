@@ -1737,6 +1737,9 @@ def _record_price_tag_generation(store, user, products):
 @price_tag_tool_required
 def price_tags(request):
     store = request.current_store
+    can_edit_template = (
+        is_system_admin(request.user) or is_store_director(request.user)
+    )
     profiles = _ensure_price_tag_profiles(store)
     active_profiles = [profile for profile in profiles if profile.is_active] or profiles
     links_form = PriceTagLinksForm()
@@ -1746,6 +1749,9 @@ def price_tags(request):
     unmatched_products = []
     generation = None
     action = request.POST.get('action') if request.method == 'POST' else ''
+    force_refresh = (
+        can_edit_template and request.POST.get('force_refresh') == '1'
+    )
 
     if action == 'generate':
         links_form = PriceTagLinksForm(request.POST)
@@ -1763,8 +1769,12 @@ def price_tags(request):
                     continue
                 try:
                     property_limit = _price_tag_property_limit(profile)
+                    imported_product = (
+                        import_product(url, force_refresh=True)
+                        if force_refresh else import_product(url)
+                    )
                     product = apply_category_rules(
-                        import_product(url),
+                        imported_product,
                         list(profile.categories.filter(is_active=True)),
                         property_limit,
                     )
@@ -1863,9 +1873,7 @@ def price_tags(request):
             ],
             'import_errors': import_errors,
             'printed_on': _store_today(store),
-            'can_edit_template': (
-                is_system_admin(request.user) or is_store_director(request.user)
-            ),
+            'can_edit_template': can_edit_template,
             'generation_history': generation_history,
             'seller_praise': generation.seller_praise if generation else '',
             'sales_tip': generation.sales_tip if generation else '',

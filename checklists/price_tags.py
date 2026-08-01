@@ -2,6 +2,7 @@ import ipaddress
 import json
 import re
 import socket
+import time
 from html import unescape
 from difflib import SequenceMatcher
 from io import BytesIO
@@ -120,6 +121,16 @@ class ImportedProduct:
                 return str(value).strip()
         match = re.search(r'(?<!\w)(\d{1,3}\s*[VВ])\b', self.name, re.IGNORECASE)
         return re.sub(r'\s+', '', match.group(1)).upper() if match else ''
+
+    @property
+    def voltage_series_class(self):
+        match = re.search(r'\d{1,3}', self.voltage_text)
+        if not match:
+            return 'series-default'
+        voltage = match.group(0)
+        if voltage in {'20', '24', '40', '60', '82', '220'}:
+            return f'series-{voltage}'
+        return 'series-default'
 
     @property
     def warranty_text(self):
@@ -358,11 +369,35 @@ class _SafeRedirectHandler(request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _download(url):
-    _validate_public_url(url)
+def _cache_busted_url(url):
+    parts = parse.urlsplit(url)
+    query = [
+        (key, value) for key, value in parse.parse_qsl(
+            parts.query, keep_blank_values=True,
+        )
+        if key != '_price_tag_refresh'
+    ]
+    query.append(('_price_tag_refresh', str(time.time_ns())))
+    return parse.urlunsplit(parts._replace(query=parse.urlencode(query)))
+
+
+def _clean_download_url(url):
+    parts = parse.urlsplit(url)
+    query = [
+        (key, value) for key, value in parse.parse_qsl(
+            parts.query, keep_blank_values=True,
+        )
+        if key != '_price_tag_refresh'
+    ]
+    return parse.urlunsplit(parts._replace(query=parse.urlencode(query)))
+
+
+def _download(url, *, force_refresh=False):
+    request_url = _cache_busted_url(url) if force_refresh else url
+    _validate_public_url(request_url)
     opener = request.build_opener(_SafeRedirectHandler())
     req = request.Request(
-        url,
+        request_url,
         headers={
             'User-Agent': (
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
@@ -370,6 +405,10 @@ def _download(url):
             ),
             'Accept': 'text/html,application/xhtml+xml',
             'Accept-Language': 'ru-RU,ru;q=0.9',
+            **({
+                'Cache-Control': 'no-cache, no-store, max-age=0',
+                'Pragma': 'no-cache',
+            } if force_refresh else {}),
         },
     )
     try:
@@ -381,11 +420,20 @@ def _download(url):
             if len(raw) > MAX_RESPONSE_BYTES:
                 raise ProductImportError('Страница слишком большая.')
             charset = response.headers.get_content_charset() or 'utf-8'
-            return raw.decode(charset, errors='replace'), response.geturl()
+            final_url = response.geturl()
+            if force_refresh:
+                final_url = _clean_download_url(final_url)
+            return raw.decode(charset, errors='replace'), final_url
     except ProductImportError:
         raise
     except (error.URLError, TimeoutError, OSError) as exc:
         raise ProductImportError('Не удалось загрузить карточку товара.') from exc
+
+
+def _fetch_html(url, force_refresh=False):
+    if force_refresh:
+        return _download(url, force_refresh=True)
+    return _download(url)
 
 
 def download_product_image(url):
@@ -506,6 +554,7 @@ def _pinel_variant_label(name):
 
 def _pinel_search_variants(
     sku, final_url, current_price='', current_currency='RUB',
+    force_refresh=False,
 ):
     base_sku = _pinel_base_sku(sku)
     if not base_sku:
@@ -514,7 +563,7 @@ def _pinel_search_variants(
         {'q': base_sku},
     )
     try:
-        search_html, _ = _download(search_url)
+        search_html, _ = _fetch_html(search_url, force_refresh)
     except ProductImportError:
         return []
     products_marker = re.search(
@@ -577,7 +626,7 @@ def _pinel_search_variants(
             price, currency = current_price, current_currency
         elif not price:
             try:
-                variant_html, resolved_url = _download(url)
+                variant_html, resolved_url = _fetch_html(url, force_refresh)
                 price, currency = _offer_from_html(variant_html)
                 url = resolved_url
             except ProductImportError:
@@ -615,9 +664,10 @@ def _pinel_search_variants(
 
 def _pinel_price_variants(
     html, final_url, current_price, current_currency, sku='',
+    force_refresh=False,
 ):
     search_variants = _pinel_search_variants(
-        sku, final_url, current_price, current_currency,
+        sku, final_url, current_price, current_currency, force_refresh,
     )
     if len(search_variants) >= 2:
         return search_variants
@@ -634,7 +684,9 @@ def _pinel_price_variants(
             )
         else:
             try:
-                variant_html, resolved_url = _download(variant_url)
+                variant_html, resolved_url = _fetch_html(
+                    variant_url, force_refresh,
+                )
                 price, currency = _offer_from_html(variant_html)
             except ProductImportError:
                 continue
@@ -948,8 +1000,8 @@ def select_product_properties(product, requested_names=(), max_properties=5):
     return product
 
 
-def import_product(url, *, _resolve_pinel_base=True):
-    html, final_url = _download(url)
+def import_product(url, *, _resolve_pinel_base=True, force_refresh=False):
+    html, final_url = _fetch_html(url, force_refresh)
     parser = _ProductHTMLParser()
     parser.feed(html)
     candidates = [
@@ -1032,6 +1084,7 @@ def import_product(url, *, _resolve_pinel_base=True):
             return imported
         imported.price_variants = _pinel_price_variants(
             html, final_url, imported.price, imported.currency, imported.sku,
+            force_refresh,
         )
         base_variant = next((
             item for item in imported.price_variants
@@ -1045,6 +1098,7 @@ def import_product(url, *, _resolve_pinel_base=True):
                     base_product = import_product(
                         base_variant['url'],
                         _resolve_pinel_base=False,
+                        force_refresh=force_refresh,
                     )
                 except ProductImportError:
                     pass
