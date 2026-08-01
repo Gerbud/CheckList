@@ -14,6 +14,7 @@ from checklists.price_tags import (
     apply_category_rules,
     build_qr_url,
     clean_product_name,
+    clean_pinel_display_name,
     import_product,
     suggest_product_name,
 )
@@ -130,12 +131,19 @@ def test_pinel_imports_prices_for_up_to_five_equipment_variants(monkeypatch):
     product = import_product('https://www.pinel.ru/catalog/sku/2/')
 
     assert product.formatted_price_variants == [
-        {'label': '2,5 А/ч', 'price': '179 970 ₽', 'is_current': False},
-        {'label': '5 А/ч', 'price': '193 970 ₽', 'is_current': True},
         {
-            'label': 'Без аккумулятора',
+            'label': 'Без АКБ и ЗУ',
             'price': '149 970 ₽',
             'is_current': False,
+            'is_base': True,
+        },
+        {
+            'label': '+ АКБ 2,5 А/ч и ЗУ',
+            'price': '179 970 ₽', 'is_current': False, 'is_base': False,
+        },
+        {
+            'label': '+ АКБ 5 А/ч и ЗУ',
+            'price': '193 970 ₽', 'is_current': True, 'is_base': False,
         },
     ]
 
@@ -150,9 +158,11 @@ def test_pinel_finds_variants_through_search_by_base_sku(monkeypatch):
 
     def card(path, name, sku, price):
         return f'''
+          <div class="product__item product_item-js">
           <a href="{path}" class="item__title">{name}</a>
           <p class="item__vendor_code">Артикул: {sku}</p>
           <span class="price">{price} ₽</span>
+          </div>
         '''
 
     search_html = ''.join([
@@ -191,12 +201,79 @@ def test_pinel_finds_variants_through_search_by_base_sku(monkeypatch):
     assert calls[1].endswith('/search/?q=2519207')
     assert product.formatted_price_variants == [
         {
-            'label': 'Без аккумулятора',
-            'price': '189 990 ₽', 'is_current': False,
+            'label': 'Без АКБ и ЗУ',
+            'price': '189 990 ₽', 'is_current': False, 'is_base': True,
         },
-        {'label': '2,5 А/ч', 'price': '184 970 ₽', 'is_current': False},
-        {'label': '5 А/ч', 'price': '193 970 ₽', 'is_current': True},
+        {
+            'label': '+ АКБ 2,5 А/ч и ЗУ',
+            'price': '184 970 ₽', 'is_current': False, 'is_base': False,
+        },
+        {
+            'label': '+ АКБ 5 А/ч и ЗУ',
+            'price': '193 970 ₽', 'is_current': True, 'is_base': False,
+        },
     ]
+
+
+def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
+    def product_page(sku, price):
+        return f'''<html><head><script type="application/ld+json">
+        {{"@type":"Product","name":"Фонарь Greenworks","sku":"{sku}",
+        "offers":{{"price":"{price}","priceCurrency":"RUB"}}}}
+        </script></head><body><h1>Фонарь Greenworks</h1></body></html>'''
+
+    search_html = '''
+      <div class="product__item product_item-js">
+      <a href="/catalog/sku/1379/" class="item__title">
+        Фонарь Greenworks, без АКБ и ЗУ</a>
+      <p class="item__vendor_code">Артикул: 3502407</p>
+      <span class="price">1 490 ₽</span>
+      </div>
+      <div class="product__item product_item-js">
+      <a href="/catalog/sku/2178/" class="item__title">
+        Фонарь Greenworks, АКБ 2 А/ч и ЗУ</a>
+      <p class="item__vendor_code">Артикул: 3502407UA</p>
+      <span class="base__price">Нет в наличии</span>
+      </div>
+      <div class="product__item product_item-js">
+      <a href="/catalog/sku/2179/" class="item__title">
+        Фонарь Greenworks, АКБ 4 А/ч и ЗУ</a>
+      <p class="item__vendor_code">Артикул: 3502407UB</p>
+      <span class="base__price">Нет в наличии</span>
+      </div>
+    '''
+    pages = {
+        '/catalog/sku/2178/': product_page('3502407UA', '1990'),
+        '/catalog/sku/2179/': product_page('3502407UB', '2490'),
+    }
+
+    def fake_download(url):
+        from urllib.parse import urlsplit
+        if '/search/' in url:
+            return search_html, url
+        path = urlsplit(url).path
+        return pages[path], f'https://pinel.ru{path}'
+
+    monkeypatch.setattr('checklists.price_tags._download', fake_download)
+
+    product = import_product('https://pinel.ru/catalog/sku/2178/')
+
+    assert [item['label'] for item in product.formatted_price_variants] == [
+        'Без АКБ и ЗУ',
+        '+ АКБ 2 А/ч и ЗУ',
+        '+ АКБ 4 А/ч и ЗУ',
+    ]
+    assert [item['price'] for item in product.formatted_price_variants] == [
+        '1 490 ₽', '1 990 ₽', '2 490 ₽',
+    ]
+
+
+def test_pinel_display_name_removes_category_and_sku():
+    assert clean_pinel_display_name(
+        'Фонарь Greenworks 24V G24SL200 | 3502407UA',
+        '3502407UA',
+        'Фонарь',
+    ) == 'Greenworks 24V G24SL200'
 
 
 def test_product_falls_back_to_heading_price_and_table(monkeypatch):
