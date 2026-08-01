@@ -52,6 +52,7 @@ def price_tag_setup():
         store=store,
         name='PINEL',
         site_domain='pinel.test',
+        layout_template=StorePriceTagTemplate.LayoutTemplate.PINEL,
     )
     return {
         'store': store,
@@ -184,6 +185,7 @@ def test_director_can_generate_and_edit_store_profile(
             'name': 'ES-AUTO',
             'site_domain': 'example.test',
             'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
+            'layout_template': StorePriceTagTemplate.LayoutTemplate.ES_AUTO,
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'max_properties': 4,
@@ -210,6 +212,7 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
             'name': 'ES-AUTO',
             'site_domain': 'example.test',
             'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
+            'layout_template': StorePriceTagTemplate.LayoutTemplate.PINEL,
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'show_image': 'on',
@@ -229,6 +232,7 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     assert template.max_properties == 4
     assert template.qr_utm_parameters == 'utm_source=price_tag&utm_medium=offline'
     assert template.print_mode == StorePriceTagTemplate.PrintMode.MONOCHROME
+    assert template.layout_template == StorePriceTagTemplate.LayoutTemplate.PINEL
 
 
 def test_director_can_create_another_site_profile(client, price_tag_setup):
@@ -242,6 +246,7 @@ def test_director_can_create_another_site_profile(client, price_tag_setup):
             'name': 'Запасной сайт',
             'site_domain': 'shop.example.test',
             'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
+            'layout_template': StorePriceTagTemplate.LayoutTemplate.ES_AUTO,
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'max_properties': 5,
@@ -679,6 +684,8 @@ def test_mixed_domains_automatically_use_their_own_profiles(
     assert 'PINEL mower' in content
     assert 'print-mode-color' in content
     assert 'print-mode-monochrome' in content
+    assert 'price-tag-layout-es_auto' in content
+    assert 'price-tag-layout-pinel' in content
     assert 'PINEL · Газонокосилки PINEL' in content
     assert content.count('class="price-tag-name" contenteditable="true"') == 2
 
@@ -736,7 +743,7 @@ def test_four_price_tags_are_grouped_on_one_a4_sheet(
 
     assert response.status_code == 200
     assert content.count('class="price-tag-sheet"') == 1
-    assert content.count('class="price-tag print-mode-') == 4
+    assert content.count('class="price-tag price-tag-layout-') == 4
     assert 'width: 198mm; height: 280mm' in content
     assert 'grid-template-columns: repeat(2, 99mm)' in content
     assert 'grid-template-rows: repeat(2, 140mm)' in content
@@ -924,10 +931,66 @@ def test_product_image_proxy_and_pdf_download_controls(
     assert 'id="download-price-tags-pdf"' in page
     assert page.count('data-print-price-tags') >= 3
     assert 'Данные проверил — отправляю на печать' in page
-    assert 'покупателю не придётся угадывать цену' in page
+    assert 'data-seller-praise' in page
+    assert 'data-sales-tip' in page
     assert 'html2canvas.min.js' in page
     assert 'jspdf.umd.min.js' in page
     assert "pdf.addImage(canvas.toDataURL('image/png')" in page
     assert 'prepareContainedImagesForPdf' in page
     assert "window.addEventListener('beforeprint', enablePriceTagPrintLayout)" in page
     assert "if (index > 0) pdf.addPage('a4', 'portrait')" in page
+
+
+def test_each_generation_gets_a_new_seller_tip(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(url=url, name='Товар', price='1000'),
+    )
+    client.force_login(price_tag_setup['terminal'])
+
+    first_response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/product/first/'},
+    )
+    first = PriceTagGeneration.objects.filter(
+        store=price_tag_setup['store'],
+    ).first()
+    second_response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/product/second/'},
+    )
+    second = PriceTagGeneration.objects.filter(
+        store=price_tag_setup['store'],
+    ).first()
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first.seller_praise
+    assert first.sales_tip
+    assert second.seller_praise != first.seller_praise
+    assert second.sales_tip != first.sales_tip
+    second_content = second_response.content.decode()
+    assert second.seller_praise in second_content
+    assert second.sales_tip in second_content
+
+
+def test_director_profile_page_exposes_site_layout_choice(
+    client,
+    price_tag_setup,
+):
+    client.force_login(price_tag_setup['director'])
+
+    response = client.get(
+        reverse('checklists:price_tag_profile'),
+        {'profile': price_tag_setup['es_profile'].pk},
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'Шаблон оформления ценника' in content
+    assert 'ES-AUTO — текущий шаблон' in content
+    assert 'PINEL — отдельный шаблон' in content

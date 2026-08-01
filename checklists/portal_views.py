@@ -1541,6 +1541,60 @@ def director_reports(request):
     )
 
 
+PRICE_TAG_SELLER_TIPS = (
+    (
+        'Отличная работа — ценники под контролем!',
+        'Сначала уточните задачу покупателя, а затем показывайте товар: '
+        'рекомендация будет восприниматься как помощь, а не как давление.',
+    ),
+    (
+        'Так держать — покупателю всё будет понятно!',
+        'Не перечисляйте все характеристики подряд. Выберите одну главную '
+        'выгоду, которая решает задачу именно этого покупателя.',
+    ),
+    (
+        'Профессиональный подход: проверено и готово к печати!',
+        'Если покупатель сравнивает варианты, назовите простое различие: '
+        'кому и в какой ситуации лучше подходит каждый из них.',
+    ),
+    (
+        'Ценник готов — ещё один повод собой гордиться!',
+        'Покажите товар в использовании: короткий живой пример запоминается '
+        'лучше, чем длинный список технических параметров.',
+    ),
+    (
+        'Отличная подготовка — продажи любят порядок!',
+        'Спросите, что для покупателя важнее: цена, удобство, надёжность или '
+        'внешний вид. Ответ сразу подскажет правильный аргумент.',
+    ),
+    (
+        'Вы всё проверили — покупатель это оценит!',
+        'Перед завершением разговора повторите выбранную модель и её главную '
+        'пользу. Так покупатель увереннее принимает решение.',
+    ),
+    (
+        'Красиво, понятно, вовремя — отличная работа!',
+        'Дополнительный товар предлагайте через пользу: не «возьмите ещё», '
+        'а «это поможет установить, защитить или удобнее использовать покупку».',
+    ),
+    (
+        'Ценник не забыт — уровень ответственного продавца!',
+        'Если вопрос покупателя требует проверки, честно скажите об этом и '
+        'уточните информацию. Точный ответ укрепляет доверие лучше догадки.',
+    ),
+    (
+        'Ещё один ценник готов — стабильность побеждает хаос!',
+        'После демонстрации задайте простой вопрос: «Как вам этот вариант?» '
+        'Ответ покажет, какой аргумент нужен дальше.',
+    ),
+    (
+        'Отличный темп — магазин выглядит профессионально!',
+        'Цена звучит убедительнее вместе с результатом: объясните, что '
+        'покупатель получит за эти деньги и какую проблему товар решит.',
+    ),
+)
+
+
 def _ensure_price_tag_profiles(store):
     profiles = list(store.price_tag_templates.all())
     if profiles:
@@ -1555,6 +1609,7 @@ def _ensure_price_tag_profiles(store):
             store=store,
             name='PINEL',
             site_domain='pinel.ru',
+            layout_template=StorePriceTagTemplate.LayoutTemplate.PINEL,
         ),
     ])
     return list(store.price_tag_templates.all())
@@ -1586,14 +1641,36 @@ def _ordered_category_property_names(category):
     ]
 
 
+def _next_price_tag_seller_tip(store):
+    last_tip = (
+        PriceTagGeneration.objects.filter(store=store)
+        .exclude(sales_tip='')
+        .values_list('sales_tip', flat=True)
+        .first()
+    )
+    if not last_tip:
+        return PRICE_TAG_SELLER_TIPS[store.pk % len(PRICE_TAG_SELLER_TIPS)]
+    last_index = next(
+        (
+            index for index, (_, tip) in enumerate(PRICE_TAG_SELLER_TIPS)
+            if tip == last_tip
+        ),
+        -1,
+    )
+    return PRICE_TAG_SELLER_TIPS[(last_index + 1) % len(PRICE_TAG_SELLER_TIPS)]
+
+
 def _record_price_tag_generation(store, user, products):
     if not products:
         return None
     with transaction.atomic():
+        seller_praise, sales_tip = _next_price_tag_seller_tip(store)
         generation = PriceTagGeneration.objects.create(
             store=store,
             created_by=user,
             item_count=len(products),
+            seller_praise=seller_praise,
+            sales_tip=sales_tip,
         )
         PriceTagGenerationItem.objects.bulk_create([
             PriceTagGenerationItem(
@@ -1628,6 +1705,7 @@ def price_tags(request):
     import_errors = []
     category_panels = []
     unmatched_products = []
+    generation = None
     action = request.POST.get('action') if request.method == 'POST' else ''
 
     if action == 'generate':
@@ -1710,7 +1788,11 @@ def price_tags(request):
                         property_limit,
                     )
                 category_panels.append(panel)
-            _record_price_tag_generation(store, request.user, products)
+            generation = _record_price_tag_generation(
+                store,
+                request.user,
+                products,
+            )
 
     generation_history = list(
         PriceTagGeneration.objects.filter(store=store)
@@ -1743,6 +1825,8 @@ def price_tags(request):
                 is_system_admin(request.user) or is_store_director(request.user)
             ),
             'generation_history': generation_history,
+            'seller_praise': generation.seller_praise if generation else '',
+            'sales_tip': generation.sales_tip if generation else '',
         },
     )
 

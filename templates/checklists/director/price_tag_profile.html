@@ -4,7 +4,7 @@
 <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
   <div>
     <h1 class="h3 mb-1">Интернет-магазины · {{ store.name }}</h1>
-    <p class="text-secondary mb-0">У каждого сайта собственные логотип, оформление, UTM и категории товаров.</p>
+    <p class="text-secondary mb-0">У каждого сайта собственные логотип, шаблон оформления, UTM и категории товаров. Выбор шаблона доступен администратору и директору.</p>
   </div>
   <a class="btn btn-outline-primary align-self-start" href="{% url 'checklists:director_price_tags' %}{% if price_tag_template %}?profile={{ price_tag_template.pk }}{% endif %}">← К ценникам</a>
 </div>
@@ -12,7 +12,7 @@
 <div class="d-flex flex-wrap gap-2 mb-4">
   {% for profile in price_tag_profiles %}
     <a class="btn {% if price_tag_template and profile.pk == price_tag_template.pk %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{% url 'checklists:price_tag_profile' %}?profile={{ profile.pk }}">
-      {{ profile.name }} <span class="small opacity-75">{{ profile.site_domain }}</span>
+      {{ profile.name }} <span class="small opacity-75">{{ profile.site_domain }} · {{ profile.get_layout_template_display }}</span>
     </a>
   {% endfor %}
   <a class="btn {% if is_new_profile %}btn-success{% else %}btn-outline-success{% endif %}" href="{% url 'checklists:price_tag_profile' %}?new=1">+ Добавить сайт</a>

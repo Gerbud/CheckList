@@ -121,7 +121,7 @@
 {% if products %}<section class="price-tag-print-area" aria-label="Готовые ценники">
   <div class="price-tag-preview-toolbar d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника с безопасными полями</span></div>
   <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
-    {% with template=product.price_tag_profile %}<article class="price-tag print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
+    {% with template=product.price_tag_profile %}<article class="price-tag price-tag-layout-{{ template.layout_template }} print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
       <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
       <div class="price-tag-product"><div class="price-tag-type">{{ product.price_tag_category_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" data-source-url="{{ product.url }}" data-profile-id="{{ template.pk }}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-original-name="{{ product.original_name }}" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
       <div class="price-tag-price">{{ product.formatted_price }}</div>
@@ -133,7 +133,8 @@
 {% if products %}<div class="d-grid mt-3 mb-4 no-print">
   <button class="btn btn-success btn-lg py-3 fw-bold" type="button" data-print-price-tags>
     <span class="d-block fs-5">✅ Данные проверил — отправляю на печать</span>
-    <span class="d-block small fw-normal mt-1">Отличная работа! Ценник не забыт — покупателю не придётся угадывать цену.</span>
+    <span class="d-block mt-2" data-seller-praise>{{ seller_praise|default:"Отличная работа — ценники под контролем!" }}</span>
+    <span class="d-block small fw-normal mt-1" data-sales-tip>💡 Лайфхак: {{ sales_tip|default:"Сначала уточните задачу покупателя, а затем показывайте товар." }}</span>
   </button>
 </div>{% endif %}
 {% if products %}<script>

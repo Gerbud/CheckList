@@ -57,6 +57,10 @@ class Store(models.Model):
 
 
 class StorePriceTagTemplate(models.Model):
+    class LayoutTemplate(models.TextChoices):
+        ES_AUTO = 'es_auto', 'ES-AUTO — текущий шаблон'
+        PINEL = 'pinel', 'PINEL — отдельный шаблон'
+
     class PrintMode(models.TextChoices):
         COLOR = 'color', 'Цветной принтер'
         MONOCHROME = 'monochrome', 'Чёрно-белый принтер'
@@ -91,6 +95,15 @@ class StorePriceTagTemplate(models.Model):
         max_length=20,
         choices=CategoryDetectionMode.choices,
         default=CategoryDetectionMode.URL,
+    )
+    layout_template = models.CharField(
+        'шаблон оформления ценника',
+        max_length=20,
+        choices=LayoutTemplate.choices,
+        default=LayoutTemplate.ES_AUTO,
+        help_text=(
+            'Выберите оформление, которое используется для товаров этого сайта.'
+        ),
     )
     logo = models.ImageField(
         'логотип для ценников',
@@ -257,6 +270,18 @@ class PriceTagGeneration(models.Model):
         related_name='price_tag_generations',
     )
     item_count = models.PositiveSmallIntegerField('ценников', default=0)
+    seller_praise = models.CharField(
+        'похвала продавцу',
+        max_length=160,
+        blank=True,
+        default='',
+    )
+    sales_tip = models.CharField(
+        'совет продавцу',
+        max_length=400,
+        blank=True,
+        default='',
+    )
     created_at = models.DateTimeField('создано', auto_now_add=True)
 
     class Meta:

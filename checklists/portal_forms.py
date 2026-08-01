@@ -841,7 +841,7 @@ class StorePriceTagTemplateForm(forms.ModelForm):
         model = StorePriceTagTemplate
         fields = (
             'name', 'site_domain', 'logo',
-            'category_detection_mode',
+            'category_detection_mode', 'layout_template',
             'primary_color', 'accent_color', 'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
             'qr_utm_parameters', 'print_mode', 'is_active',
@@ -854,6 +854,7 @@ class StorePriceTagTemplateForm(forms.ModelForm):
                 'class': 'form-control', 'placeholder': 'es-auto.ru',
             }),
             'category_detection_mode': forms.Select(attrs={'class': 'form-select'}),
+            'layout_template': forms.Select(attrs={'class': 'form-select'}),
             'logo': forms.FileInput(attrs={'class': 'form-control'}),
             'primary_color': forms.TextInput(attrs={
                 'type': 'color', 'class': 'form-control form-control-color',
