@@ -743,6 +743,8 @@ def test_four_price_tags_are_grouped_on_one_a4_sheet(
     assert 'margin: 8mm auto 0' in content
     assert 'padding: 4mm 5.5mm 4mm 8.5mm' in content
     assert 'grid-template-columns: minmax(42mm, 1.25fr) minmax(0, 1fr)' in content
+    assert 'gap: .45mm; max-height: 31mm' in content
+    assert 'padding-top: 2mm; border-top: 0' in content
 
 
 def test_generation_history_keeps_last_twenty_and_reuses_url(
