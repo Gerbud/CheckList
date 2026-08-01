@@ -103,12 +103,6 @@ class StorePriceTagTemplate(models.Model):
         default=list,
         blank=True,
     )
-    heading = models.CharField(
-        'подпись на ценнике',
-        max_length=80,
-        blank=True,
-        default='',
-    )
     primary_color = models.CharField(
         'основной цвет',
         max_length=7,
@@ -209,6 +203,20 @@ class StorePriceTagCategory(models.Model):
         'найденные свойства категории',
         default=list,
         blank=True,
+    )
+    promotion_title = models.CharField(
+        'заголовок акции',
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='Например: БЕСПЛАТНАЯ УСТАНОВКА.',
+    )
+    promotion_details = models.CharField(
+        'условия акции',
+        max_length=200,
+        blank=True,
+        default='',
+        help_text='Например: условия акции уточняйте у менеджера.',
     )
     sort_order = models.PositiveIntegerField('порядок', default=0)
     is_active = models.BooleanField('активна', default=True)

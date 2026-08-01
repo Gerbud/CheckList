@@ -200,6 +200,11 @@ urlpatterns = [
         portal_views.price_tag_category_properties,
         name='price_tag_category_properties',
     ),
+    path(
+        'director/price-tags/category-promotion/',
+        portal_views.price_tag_category_promotion,
+        name='price_tag_category_promotion',
+    ),
     path('director/price-tags/profile/', portal_views.price_tag_profile, name='price_tag_profile'),
     path('director/reports/daily/', portal_views.director_report_daily, name='director_report_daily'),
     path('director/reports/employees/', portal_views.director_report_employees, name='director_report_employees'),

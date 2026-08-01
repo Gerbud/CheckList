@@ -184,7 +184,6 @@ def test_director_can_generate_and_edit_store_profile(
             'name': 'ES-AUTO',
             'site_domain': 'example.test',
             'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
-            'heading': 'Акция',
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'max_properties': 4,
@@ -192,8 +191,8 @@ def test_director_can_generate_and_edit_store_profile(
         },
     )
     assert saved.status_code == 302
-    price_tag_setup['es_profile'].refresh_from_db()
-    assert price_tag_setup['es_profile'].heading == 'Акция'
+    profile_page = client.get(reverse('checklists:price_tag_profile'))
+    assert 'Подпись на ценнике' not in profile_page.content.decode()
 
 
 def test_admin_can_save_separate_store_template(client, price_tag_setup):
@@ -211,7 +210,6 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
             'name': 'ES-AUTO',
             'site_domain': 'example.test',
             'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
-            'heading': 'Лучшая цена',
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'show_image': 'on',
@@ -228,7 +226,6 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     template = StorePriceTagTemplate.objects.get(
         pk=price_tag_setup['es_profile'].pk,
     )
-    assert template.heading == 'Лучшая цена'
     assert template.max_properties == 4
     assert template.qr_utm_parameters == 'utm_source=price_tag&utm_medium=offline'
     assert template.print_mode == StorePriceTagTemplate.PrintMode.MONOCHROME
@@ -272,6 +269,8 @@ def test_director_defines_url_category_in_site_profile(client, price_tag_setup):
             'profile_id': profile.pk,
             'name': 'Автомобильные боксы',
             'source_url': 'https://example.test/car-box/',
+            'promotion_title': 'БЕСПЛАТНАЯ УСТАНОВКА',
+            'promotion_details': 'Условия акции уточняйте у менеджера',
             'sort_order': 10,
             'is_active': 'on',
         },
@@ -284,6 +283,8 @@ def test_director_defines_url_category_in_site_profile(client, price_tag_setup):
     )
     assert category.source_url == 'https://example.test/car-box/'
     assert category.property_names == ''
+    assert category.promotion_title == 'БЕСПЛАТНАЯ УСТАНОВКА'
+    assert category.promotion_details == 'Условия акции уточняйте у менеджера'
 
 
 def test_url_category_must_belong_to_profile_domain(client, price_tag_setup):
@@ -486,6 +487,69 @@ def test_terminal_account_can_select_loaded_category_properties(
          'category_id': category.pk},
     )
     assert forbidden.status_code == 403
+
+
+def test_category_promotion_is_editable_on_price_tag(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    category = StorePriceTagCategory.objects.create(
+        profile=price_tag_setup['es_profile'],
+        name='Багажники',
+        source_url='https://example.test/racks/',
+        promotion_title='БЕСПЛАТНАЯ УСТАНОВКА',
+        promotion_details='Условия акции уточняйте у менеджера',
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url=url,
+            name='Багажник Евродеталь',
+            price='1550',
+            sku='ET4010RR',
+            properties=[('Производитель', 'Евродеталь')],
+        ),
+    )
+    client.force_login(price_tag_setup['terminal'])
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/racks/item/'},
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'data-promotion-block data-category-id' in content
+    assert 'data-promotion-title' in content
+    assert 'БЕСПЛАТНАЯ УСТАНОВКА' in content
+    assert 'Условия акции уточняйте у менеджера' in content
+    assert 'height: 29mm; min-height: 29mm' in content
+    assert '.price-tag-price { margin: 2mm 0;' in content
+    assert 'price-tag-heading' not in content
+
+    deleted = client.post(
+        reverse('checklists:price_tag_category_promotion'),
+        {
+            'category_id': category.pk,
+            'promotion_title': '',
+            'promotion_details': '',
+        },
+    )
+    assert deleted.status_code == 200
+    category.refresh_from_db()
+    assert category.promotion_title == ''
+    assert category.promotion_details == ''
+
+    too_long = client.post(
+        reverse('checklists:price_tag_category_promotion'),
+        {
+            'category_id': category.pk,
+            'promotion_title': 'А' * 101,
+            'promotion_details': '',
+        },
+    )
+    assert too_long.status_code == 400
 
 
 def test_category_rule_selects_and_orders_properties(price_tag_setup):

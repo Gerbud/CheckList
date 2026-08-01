@@ -840,7 +840,7 @@ class StorePriceTagTemplateForm(forms.ModelForm):
     class Meta:
         model = StorePriceTagTemplate
         fields = (
-            'name', 'site_domain', 'logo', 'heading',
+            'name', 'site_domain', 'logo',
             'category_detection_mode',
             'primary_color', 'accent_color', 'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
@@ -855,7 +855,6 @@ class StorePriceTagTemplateForm(forms.ModelForm):
             }),
             'category_detection_mode': forms.Select(attrs={'class': 'form-select'}),
             'logo': forms.FileInput(attrs={'class': 'form-control'}),
-            'heading': forms.TextInput(attrs={'class': 'form-control'}),
             'primary_color': forms.TextInput(attrs={
                 'type': 'color', 'class': 'form-control form-control-color',
             }),
@@ -905,7 +904,8 @@ class StorePriceTagCategoryForm(forms.ModelForm):
         model = StorePriceTagCategory
         fields = (
             'name', 'source_url', 'match_property_name',
-            'match_property_value', 'sort_order', 'is_active',
+            'match_property_value', 'promotion_title',
+            'promotion_details', 'sort_order', 'is_active',
         )
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -915,6 +915,14 @@ class StorePriceTagCategoryForm(forms.ModelForm):
             }),
             'match_property_name': forms.TextInput(attrs={'class': 'form-control'}),
             'match_property_value': forms.TextInput(attrs={'class': 'form-control'}),
+            'promotion_title': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'БЕСПЛАТНАЯ УСТАНОВКА',
+            }),
+            'promotion_details': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Условия акции уточняйте у менеджера',
+            }),
             'sort_order': forms.NumberInput(attrs={'class': 'form-control'}),
         }
 

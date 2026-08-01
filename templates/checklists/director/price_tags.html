@@ -13,9 +13,8 @@
   .price-tag-brand { min-width: 0; }
   .price-tag-logo { width: 38mm; height: 23mm; display: block; object-fit: contain; object-position: left center; }
   .price-tag-store { font-size: 5mm; font-weight: 900; line-height: 1; }
-  .price-tag-heading { margin-top: 1mm; font-size: 3mm; font-weight: 700; }
-  .price-tag-product { min-height: 26mm; margin-top: 2mm; }
-  .price-tag-name { font-size: 6mm; line-height: 1.03; letter-spacing: -.08mm; font-weight: 950; color: var(--tag-primary); max-height: 25mm; overflow: hidden; }
+  .price-tag-product { height: 29mm; min-height: 29mm; margin-top: 2mm; display: flex; flex-direction: column; overflow: hidden; }
+  .price-tag-name { font-size: 6mm; line-height: 1.03; letter-spacing: -.08mm; font-weight: 950; color: var(--tag-primary); max-height: 20mm; overflow: hidden; }
   .price-tag-name.name-medium { font-size: 5.2mm; }
   .price-tag-name.name-long { font-size: 4.5mm; line-height: 1.02; }
   .price-tag-name.name-very-long { font-size: 3.8mm; line-height: 1; }
@@ -25,15 +24,24 @@
   .price-tag-type { color: #64748b; font-size: 3.3mm; font-weight: 750; margin-bottom: 1.5mm; }
   .price-tag-image { width: 40mm; height: 26mm; display: block; object-fit: contain; object-position: center; }
   .price-tag-image-placeholder { width: 40mm; height: 26mm; }
-  .price-tag-sku { font-size: 3.2mm; color: #475569; margin-top: 2mm; }
+  .price-tag-sku { font-size: 3.2mm; color: #475569; margin-top: auto; padding-top: 1mm; }
   .price-tag-sku-line { display: flex; justify-content: space-between; gap: 2mm; flex-wrap: wrap; }
-  .price-tag-price { margin: 2.2mm 0; padding: 2.8mm 4mm; border-radius: 3mm; background: var(--tag-primary); color: #fff; font-size: 10mm; font-weight: 950; line-height: 1; text-align: center; white-space: nowrap; }
+  .price-tag-price { margin: 2mm 0; padding: 2.8mm 4mm; border-radius: 3mm; background: var(--tag-primary); color: #fff; font-size: 10mm; font-weight: 950; line-height: 1; text-align: center; white-space: nowrap; }
   .price-tag-properties { display: grid; gap: .8mm; max-height: 31mm; overflow: hidden; font-size: 3.1mm; line-height: 1.12; }
   .price-tag-property { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 2mm; border-bottom: .25mm solid #e2e8f0; padding-bottom: .8mm; }
   .price-tag-property span:first-child { color: #64748b; }
   .price-tag-property strong { text-align: right; overflow-wrap: anywhere; }
-  .price-tag-footer { margin-top: auto; min-height: 23mm; padding-top: 2mm; border-top: .3mm solid #e2e8f0; display: grid; grid-template-columns: minmax(0, 1fr) auto 21mm; align-items: end; gap: 2mm; color: #64748b; font-size: 2.5mm; }
-  .price-tag-qr { width: 21mm; height: 21mm; box-sizing: border-box; padding: .8mm; display: flex; align-items: center; justify-content: center; align-self: end; line-height: 0; background: #fff; border: .25mm solid #e2e8f0; }
+  .price-tag-footer { margin-top: auto; min-height: 23mm; padding-top: 1.5mm; border-top: .3mm solid #e2e8f0; display: grid; grid-template-columns: minmax(0, 1fr) 21mm; grid-template-rows: minmax(14mm, 1fr) auto; align-items: end; column-gap: 2mm; row-gap: 1mm; color: #64748b; font-size: 2.5mm; }
+  .price-tag-promotion { grid-column: 1; grid-row: 1; align-self: stretch; border-left: 1mm solid var(--tag-accent); border-radius: 1mm; padding: 1mm 1.5mm; display: flex; flex-direction: column; justify-content: center; overflow: hidden; background: #fff7ed; color: var(--tag-primary); }
+  .price-tag-promotion-title { font-size: 4mm; line-height: 1; font-weight: 950; text-transform: uppercase; max-height: 8mm; overflow: hidden; }
+  .price-tag-promotion-details { margin-top: .7mm; font-size: 2.35mm; line-height: 1.1; font-weight: 650; max-height: 5.5mm; overflow: hidden; }
+  .price-tag-promotion [contenteditable="true"] { outline: .3mm dashed transparent; border-radius: .7mm; }
+  .price-tag-promotion [contenteditable="true"]:hover,
+  .price-tag-promotion [contenteditable="true"]:focus { outline-color: var(--tag-accent); background: #fff; }
+  .price-tag-promotion [contenteditable="true"]:empty::before { content: attr(data-placeholder); opacity: .55; font-weight: 650; text-transform: none; }
+  .price-tag-promotion.promotion-empty { border: .3mm dashed #cbd5e1; background: #f8fafc; color: #64748b; }
+  .price-tag-meta { grid-column: 1; grid-row: 2; display: flex; justify-content: space-between; align-items: end; gap: 2mm; }
+  .price-tag-qr { grid-column: 2; grid-row: 1 / 3; width: 21mm; height: 21mm; box-sizing: border-box; padding: .8mm; display: flex; align-items: center; justify-content: center; align-self: end; line-height: 0; background: #fff; border: .25mm solid #e2e8f0; }
   .price-tag-qr-image { width: 18.5mm; height: 18.5mm; display: block; object-fit: contain; object-position: center; }
   .price-tag.print-mode-monochrome .price-tag-logo,
   .price-tag.print-mode-monochrome .price-tag-image { filter: grayscale(1) contrast(1.15); }
@@ -45,6 +53,7 @@
   .price-tag.print-mode-monochrome .price-tag-footer { color: #000; }
   .price-tag.print-mode-monochrome .price-tag-property,
   .price-tag.print-mode-monochrome .price-tag-qr { border-color: #000; }
+  .price-tag.print-mode-monochrome .price-tag-promotion { background: #fff; color: #000; border-color: #000; }
   @media print {
     @page { size: A4 portrait; margin: 0; }
     body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
@@ -56,6 +65,9 @@
     .price-tag-sheet:last-child { break-after: auto; page-break-after: auto; }
     .price-tag { break-inside: avoid; page-break-inside: avoid; }
     .price-tag-name[contenteditable="true"] { outline: none !important; background: transparent !important; }
+    .price-tag-promotion [contenteditable="true"] { outline: none !important; }
+    .price-tag-promotion [contenteditable="true"]:empty::before { content: ""; }
+    .price-tag-promotion.promotion-empty { visibility: hidden !important; }
   }
   @media (max-width: 900px) {
     .price-tag-sheets { justify-content: start; }
@@ -105,11 +117,11 @@
   <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника</span></div>
   <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
     {% with template=product.price_tag_profile %}<article class="price-tag print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
-      <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}{% if template.heading %}<div class="price-tag-heading">{{ template.heading }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
+      <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
       <div class="price-tag-product"><div class="price-tag-type">{{ product.price_tag_category_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" data-source-url="{{ product.url }}" data-profile-id="{{ template.pk }}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-original-name="{{ product.original_name }}" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
       <div class="price-tag-price">{{ product.formatted_price }}</div>
       {% if template.show_properties and product.property_rows %}<div class="price-tag-properties">{% for name, value, selected in product.property_rows %}<div class="price-tag-property{% if not selected %} d-none{% endif %}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-property-name="{{ name }}"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
-      <footer class="price-tag-footer"><span>{{ template.footer|default:store.name }}</span><span>Дата печати: {{ printed_on|date:"d.m.Y" }}</span><a class="price-tag-qr" href="{{ product.qr_url }}" aria-label="Открыть страницу товара"><img class="price-tag-qr-image" src="{% url 'checklists:price_tag_qr' %}?data={{ product.qr_url|urlencode }}" alt="QR-код товара"></a></footer>
+      <footer class="price-tag-footer">{% if product.category_rule %}<div class="price-tag-promotion" data-promotion-block data-category-id="{{ product.category_rule.pk }}"><div class="price-tag-promotion-title" contenteditable="true" spellcheck="false" data-promotion-title data-placeholder="Добавить акцию" aria-label="Заголовок акции">{{ product.category_rule.promotion_title }}</div><div class="price-tag-promotion-details" contenteditable="true" spellcheck="false" data-promotion-details data-placeholder="Условия акции" aria-label="Условия акции">{{ product.category_rule.promotion_details }}</div></div>{% endif %}<div class="price-tag-meta"><span>{{ template.footer|default:store.name }}</span><span>Дата печати: {{ printed_on|date:"d.m.Y" }}</span></div><a class="price-tag-qr" href="{{ product.qr_url }}" aria-label="Открыть страницу товара"><img class="price-tag-qr-image" src="{% url 'checklists:price_tag_qr' %}?data={{ product.qr_url|urlencode }}" alt="QR-код товара"></a></footer>
     </article>{% endwith %}
   {% endfor %}</div>{% endfor %}</div>
 </section>{% endif %}
@@ -251,6 +263,63 @@
       }).catch(function () {
         name.title = 'Не удалось сохранить название';
       });
+    });
+  });
+
+  function promotionText(block, selector) {
+    return block.querySelector(selector).textContent.replace(/\s+/g, ' ').trim();
+  }
+
+  function refreshPromotionBlock(block) {
+    const titleField = block.querySelector('[data-promotion-title]');
+    const detailsField = block.querySelector('[data-promotion-details]');
+    const titleIsEmpty = !promotionText(block, '[data-promotion-title]');
+    const detailsIsEmpty = !promotionText(block, '[data-promotion-details]');
+    titleField.toggleAttribute('data-html2canvas-ignore', titleIsEmpty);
+    detailsField.toggleAttribute('data-html2canvas-ignore', detailsIsEmpty);
+    const isEmpty = titleIsEmpty && detailsIsEmpty;
+    block.classList.toggle('promotion-empty', isEmpty);
+    if (isEmpty) block.setAttribute('data-html2canvas-ignore', 'true');
+    else block.removeAttribute('data-html2canvas-ignore');
+  }
+
+  function savePromotion(block) {
+    const payload = new FormData();
+    payload.append('category_id', block.dataset.categoryId);
+    payload.append('promotion_title', promotionText(block, '[data-promotion-title]'));
+    payload.append('promotion_details', promotionText(block, '[data-promotion-details]'));
+    fetch('{% url "checklists:price_tag_category_promotion" %}', {
+      method: 'POST', headers: {'X-CSRFToken': csrfToken}, body: payload,
+      credentials: 'same-origin'
+    }).then(function (response) {
+      if (!response.ok) throw new Error();
+      return response.json();
+    }).then(function (data) {
+      document.querySelectorAll(
+        '[data-promotion-block][data-category-id="' + block.dataset.categoryId + '"]'
+      ).forEach(function (related) {
+        related.querySelector('[data-promotion-title]').textContent = data.promotion_title;
+        related.querySelector('[data-promotion-details]').textContent = data.promotion_details;
+        related.title = 'Акция сохранена для всей категории';
+        refreshPromotionBlock(related);
+      });
+    }).catch(function () {
+      block.title = 'Не удалось сохранить акцию';
+    });
+  }
+
+  document.querySelectorAll('[data-promotion-block]').forEach(function (block) {
+    refreshPromotionBlock(block);
+    block.querySelectorAll('[contenteditable="true"]').forEach(function (field) {
+      field.addEventListener('input', function () { refreshPromotionBlock(block); });
+      field.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') { event.preventDefault(); field.blur(); }
+      });
+      field.addEventListener('paste', function (event) {
+        event.preventDefault();
+        document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+      });
+      field.addEventListener('blur', function () { savePromotion(block); });
     });
   });
 

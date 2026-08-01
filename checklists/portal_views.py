@@ -1847,6 +1847,33 @@ def price_tag_category_properties(request):
     return JsonResponse({'ok': True, 'selected': names})
 
 
+@require_POST
+@price_tag_tool_required
+def price_tag_category_promotion(request):
+    category = get_object_or_404(
+        StorePriceTagCategory,
+        pk=request.POST.get('category_id'),
+        profile__store=request.current_store,
+    )
+    title = request.POST.get('promotion_title', '').strip()
+    details = request.POST.get('promotion_details', '').strip()
+    if len(title) > 100 or len(details) > 200:
+        return JsonResponse({
+            'ok': False,
+            'message': 'Текст акции слишком длинный.',
+        }, status=400)
+    category.promotion_title = title
+    category.promotion_details = details
+    category.save(update_fields=(
+        'promotion_title', 'promotion_details', 'updated_at',
+    ))
+    return JsonResponse({
+        'ok': True,
+        'promotion_title': title,
+        'promotion_details': details,
+    })
+
+
 @price_tag_tool_required
 def price_tag_profile(request):
     if not (is_system_admin(request.user) or is_store_director(request.user)):
