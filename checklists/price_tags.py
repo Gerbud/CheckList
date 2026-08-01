@@ -627,8 +627,13 @@ def _pinel_search_variants(
     base_sku = _pinel_base_sku(sku)
     if not base_sku:
         return []
-    search_url = parse.urljoin(final_url, '/search/?') + parse.urlencode(
-        {'q': base_sku},
+    # Do not put the empty query marker inside urljoin(): Python versions
+    # differ in whether the trailing "?" is preserved. Build it explicitly so
+    # the URL can never become the invalid /search/q=SKU path.
+    search_url = (
+        parse.urljoin(final_url, '/search/')
+        + '?'
+        + parse.urlencode({'q': base_sku})
     )
     try:
         # PINEL returns an incomplete search page to some server-side clients
