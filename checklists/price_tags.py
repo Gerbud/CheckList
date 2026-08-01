@@ -111,19 +111,17 @@ def site_url_matches(url, domain):
     return hostname == domain or hostname.endswith(f'.{domain}')
 
 
-def render_qr_svg(value):
+def render_qr_png(value):
     import qrcode
-    from qrcode.image.svg import SvgPathImage
 
     image = qrcode.make(
         value,
-        image_factory=SvgPathImage,
-        box_size=10,
+        box_size=12,
         border=2,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
     )
     output = BytesIO()
-    image.save(output)
+    image.save(output, format='PNG')
     return output.getvalue()
 
 

@@ -143,7 +143,7 @@ from checklists.price_tags import (
     build_qr_url,
     import_product,
     download_product_image,
-    render_qr_svg,
+    render_qr_png,
     select_product_properties,
     site_url_matches,
     suggest_product_name,
@@ -1758,7 +1758,9 @@ def price_tag_qr(request):
         or not parts.netloc
     ):
         return HttpResponse('Некорректная ссылка QR-кода.', status=400)
-    return HttpResponse(render_qr_svg(value), content_type='image/svg+xml')
+    response = HttpResponse(render_qr_png(value), content_type='image/png')
+    response['Cache-Control'] = 'private, max-age=3600'
+    return response
 
 
 @price_tag_tool_required

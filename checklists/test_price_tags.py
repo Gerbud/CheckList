@@ -329,14 +329,14 @@ def test_profile_shows_uploaded_logo_preview(client, price_tag_setup):
     assert 'Currently:' not in content
 
 
-def test_qr_endpoint_returns_server_generated_svg(
+def test_qr_endpoint_returns_server_generated_png(
     client,
     price_tag_setup,
     monkeypatch,
 ):
     monkeypatch.setattr(
-        'checklists.portal_views.render_qr_svg',
-        lambda value: f'<svg><title>{value}</title></svg>'.encode(),
+        'checklists.portal_views.render_qr_png',
+        lambda value: b'png-' + value.encode(),
     )
     client.force_login(price_tag_setup['director'])
 
@@ -346,7 +346,7 @@ def test_qr_endpoint_returns_server_generated_svg(
     )
 
     assert response.status_code == 200
-    assert response['Content-Type'] == 'image/svg+xml'
+    assert response['Content-Type'] == 'image/png'
     assert b'utm_source=price_tag' in response.content
 
 
@@ -737,8 +737,10 @@ def test_four_price_tags_are_grouped_on_one_a4_sheet(
     assert response.status_code == 200
     assert content.count('class="price-tag-sheet"') == 1
     assert content.count('class="price-tag print-mode-') == 4
-    assert 'grid-template-columns: repeat(2, 105mm)' in content
-    assert 'grid-template-rows: repeat(2, 148.5mm)' in content
+    assert 'width: 200mm; height: 285mm' in content
+    assert 'grid-template-columns: repeat(2, 100mm)' in content
+    assert 'grid-template-rows: repeat(2, 142.5mm)' in content
+    assert 'margin: 5mm auto 0' in content
 
 
 def test_generation_history_keeps_last_twenty_and_reuses_url(
@@ -916,5 +918,7 @@ def test_product_image_proxy_and_pdf_download_controls(
         {'action': 'generate', 'urls': 'https://example.test/product/pdf/'},
     ).content.decode()
     assert 'id="download-price-tags-pdf"' in page
-    assert 'html2pdf.js' in page
-    assert "format: 'a4'" in page
+    assert 'html2canvas.min.js' in page
+    assert 'jspdf.umd.min.js' in page
+    assert "pdf.addImage(canvas.toDataURL('image/png')" in page
+    assert "if (index > 0) pdf.addPage('a4', 'portrait')" in page
