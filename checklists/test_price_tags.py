@@ -147,9 +147,11 @@ def test_director_can_generate_and_edit_store_profile(
     saved = client.post(
         reverse('checklists:price_tag_profile'),
         {
+            'action': 'save_profile',
             'profile_id': price_tag_setup['es_profile'].pk,
             'name': 'ES-AUTO',
             'site_domain': 'example.test',
+            'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
             'heading': 'Акция',
             'primary_color': '#112233',
             'accent_color': '#ff6600',
@@ -172,9 +174,11 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     response = client.post(
         reverse('checklists:price_tag_profile'),
         {
+            'action': 'save_profile',
             'profile_id': price_tag_setup['es_profile'].pk,
             'name': 'ES-AUTO',
             'site_domain': 'example.test',
+            'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
             'heading': 'Лучшая цена',
             'primary_color': '#112233',
             'accent_color': '#ff6600',
@@ -204,9 +208,11 @@ def test_director_can_create_another_site_profile(client, price_tag_setup):
     response = client.post(
         reverse('checklists:price_tag_profile'),
         {
+            'action': 'save_profile',
             'create_profile': '1',
             'name': 'Запасной сайт',
             'site_domain': 'shop.example.test',
+            'category_detection_mode': StorePriceTagTemplate.CategoryDetectionMode.URL,
             'primary_color': '#112233',
             'accent_color': '#ff6600',
             'max_properties': 5,
@@ -220,6 +226,55 @@ def test_director_can_create_another_site_profile(client, price_tag_setup):
         store=price_tag_setup['store'],
         name='Запасной сайт',
         site_domain='shop.example.test',
+    ).exists()
+
+
+def test_director_defines_url_category_in_site_profile(client, price_tag_setup):
+    profile = price_tag_setup['es_profile']
+    client.force_login(price_tag_setup['director'])
+
+    response = client.post(
+        reverse('checklists:price_tag_profile'),
+        {
+            'action': 'save_category',
+            'profile_id': profile.pk,
+            'name': 'Автомобильные боксы',
+            'source_url': 'https://example.test/car-box/',
+            'sort_order': 10,
+            'is_active': 'on',
+        },
+    )
+
+    assert response.status_code == 302
+    category = StorePriceTagCategory.objects.get(
+        profile=profile,
+        name='Автомобильные боксы',
+    )
+    assert category.source_url == 'https://example.test/car-box/'
+    assert category.property_names == ''
+
+
+def test_url_category_must_belong_to_profile_domain(client, price_tag_setup):
+    profile = price_tag_setup['es_profile']
+    client.force_login(price_tag_setup['director'])
+
+    response = client.post(
+        reverse('checklists:price_tag_profile'),
+        {
+            'action': 'save_category',
+            'profile_id': profile.pk,
+            'name': 'Чужой раздел',
+            'source_url': 'https://pinel.test/catalog/',
+            'sort_order': 1,
+            'is_active': 'on',
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'Ссылка должна вести на сайт example.test.' in response.content.decode()
+    assert not StorePriceTagCategory.objects.filter(
+        profile=profile,
+        name='Чужой раздел',
     ).exists()
 
 
@@ -327,42 +382,72 @@ def test_monochrome_price_tag_uses_utm_qr_and_header_photo(
     assert '>Боксы<' not in content
 
 
-def test_terminal_account_can_open_tool_and_manage_category(client, price_tag_setup):
+def test_terminal_account_can_select_loaded_category_properties(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
     profile = price_tag_setup['es_profile']
-    profile.available_property_names = ['Мощность', 'Ширина скашивания']
-    profile.save(update_fields=('available_property_names',))
-    client.force_login(price_tag_setup['terminal'])
-    response = client.get(
-        reverse('checklists:director_price_tags'),
-        {'profile': profile.pk},
-    )
-    assert response.status_code == 200
-    assert 'Категории сайта ES-AUTO' in response.content.decode()
-
-    saved = client.post(
-        reverse('checklists:director_price_tags'),
-        {
-            'action': 'save_category',
-            'profile_id': profile.pk,
-            'name': 'Газонокосилки',
-            'url_patterns': '/lawn-mowers/',
-            'property_names': ['Мощность', 'Ширина скашивания'],
-            'sort_order': 1,
-            'is_active': 'on',
-        },
-    )
-    assert saved.status_code == 302
-    assert StorePriceTagCategory.objects.filter(
+    category = StorePriceTagCategory.objects.create(
         profile=profile,
         name='Газонокосилки',
-    ).exists()
+        source_url='https://example.test/lawn-mowers/',
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url=url,
+            name='Газонокосилка Greenworks',
+            properties=[
+                ('Мощность', '2 кВт'),
+                ('Ширина скашивания', '46 см'),
+            ],
+        ),
+    )
+    client.force_login(price_tag_setup['terminal'])
+    empty_response = client.get(
+        reverse('checklists:director_price_tags'),
+    )
+    assert empty_response.status_code == 200
+    assert 'Свойства найденных категорий' not in empty_response.content.decode()
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {
+            'action': 'generate',
+            'urls': 'https://example.test/lawn-mowers/item-1/',
+        },
+    )
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert 'ES-AUTO · Газонокосилки' in content
+    assert 'Мощность' in content
+    assert 'Ширина скашивания' in content
+
+    saved = client.post(
+        reverse('checklists:price_tag_category_properties'),
+        {
+            'category_id': category.pk,
+            'property_names': ['Мощность'],
+        },
+    )
+    assert saved.status_code == 200
+    category.refresh_from_db()
+    assert category.property_names == 'Мощность'
+
+    forbidden = client.post(
+        reverse('checklists:price_tag_profile'),
+        {'action': 'delete_category', 'profile_id': profile.pk,
+         'category_id': category.pk},
+    )
+    assert forbidden.status_code == 403
 
 
 def test_category_rule_selects_and_orders_properties(price_tag_setup):
     category = StorePriceTagCategory.objects.create(
         profile=price_tag_setup['es_profile'],
         name='Снегоуборщики',
-        url_patterns='/snow/',
+        source_url='https://example.test/snow/',
         property_names='Ширина захвата\nМощность\nВес',
     )
     product = ImportedProduct(
@@ -391,13 +476,13 @@ def test_site_profiles_have_separate_url_categories(price_tag_setup):
     es_category = StorePriceTagCategory.objects.create(
         profile=price_tag_setup['es_profile'],
         name='Автомобильные боксы',
-        url_patterns='/car-box/',
+        source_url='https://example.test/car-box/',
         property_names='Объём',
     )
     StorePriceTagCategory.objects.create(
         profile=price_tag_setup['pinel_profile'],
         name='Каталог PINEL',
-        url_patterns='/catalog/',
+        source_url='https://pinel.test/catalog/',
         property_names='Мощность',
     )
     product = ImportedProduct(
@@ -415,7 +500,7 @@ def test_site_profiles_have_separate_url_categories(price_tag_setup):
     assert product.displayed_properties == [('Объём', '590 л')]
 
 
-def test_selected_profile_rejects_another_site_url(
+def test_unknown_domain_is_rejected_before_import(
     client,
     price_tag_setup,
     monkeypatch,
@@ -431,14 +516,62 @@ def test_selected_profile_rejects_another_site_url(
         reverse('checklists:director_price_tags'),
         {
             'action': 'generate',
-            'profile': price_tag_setup['pinel_profile'].pk,
-            'urls': 'https://example.test/car-box/sku/element-590/',
+            'urls': 'https://unknown.test/car-box/sku/element-590/',
         },
     )
 
     assert response.status_code == 200
-    assert 'Ссылка не относится к профилю PINEL' in response.content.decode()
+    assert 'Для домена этой ссылки не настроен профиль' in response.content.decode()
     assert imported == []
+
+
+def test_mixed_domains_automatically_use_their_own_profiles(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    pinel = price_tag_setup['pinel_profile']
+    pinel.category_detection_mode = StorePriceTagTemplate.CategoryDetectionMode.PROPERTY
+    pinel.print_mode = StorePriceTagTemplate.PrintMode.MONOCHROME
+    pinel.save(update_fields=('category_detection_mode', 'print_mode'))
+    StorePriceTagCategory.objects.create(
+        profile=pinel,
+        name='Газонокосилки PINEL',
+        match_property_name='Тип товара',
+        match_property_value='Газонокосилка',
+    )
+
+    def fake_import(url):
+        return ImportedProduct(
+            url=url,
+            name='PINEL mower' if 'pinel.test' in url else 'ES-AUTO box',
+            properties=(
+                [('Тип товара', 'Газонокосилка'), ('Мощность', '2 кВт')]
+                if 'pinel.test' in url else []
+            ),
+        )
+
+    monkeypatch.setattr('checklists.portal_views.import_product', fake_import)
+    client.force_login(price_tag_setup['director'])
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {
+            'action': 'generate',
+            'urls': (
+                'https://example.test/product/1/\n'
+                'https://pinel.test/catalog/product/2/'
+            ),
+        },
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'ES-AUTO box' in content
+    assert 'PINEL mower' in content
+    assert 'print-mode-color' in content
+    assert 'print-mode-monochrome' in content
+    assert 'PINEL · Газонокосилки PINEL' in content
+    assert content.count('class="price-tag-name" contenteditable="true"') == 2
 
 
 def test_seo_product_name_is_cleaned_without_losing_variant():
@@ -489,6 +622,6 @@ def test_four_price_tags_are_grouped_on_one_a4_sheet(
 
     assert response.status_code == 200
     assert content.count('class="price-tag-sheet"') == 1
-    assert content.count('class="price-tag"') == 4
+    assert content.count('class="price-tag print-mode-') == 4
     assert 'grid-template-columns: repeat(2, 105mm)' in content
     assert 'grid-template-rows: repeat(2, 148.5mm)' in content

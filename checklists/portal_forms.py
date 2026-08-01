@@ -795,11 +795,6 @@ class ReopenStageForm(forms.Form):
 
 
 class PriceTagLinksForm(forms.Form):
-    profile = forms.ModelChoiceField(
-        label='Интернет-магазин',
-        queryset=StorePriceTagTemplate.objects.none(),
-        widget=forms.Select(attrs={'class': 'form-select'}),
-    )
     urls = forms.CharField(
         label='Ссылки на товары',
         help_text='Каждая ссылка с новой строки. Максимум 20 товаров.',
@@ -809,13 +804,6 @@ class PriceTagLinksForm(forms.Form):
             'placeholder': 'https://example.ru/product/123/\nhttps://example.ru/product/456/',
         }),
     )
-
-    def __init__(self, *args, profiles=(), **kwargs):
-        super().__init__(*args, **kwargs)
-        profile_ids = [profile.pk for profile in profiles]
-        self.fields['profile'].queryset = StorePriceTagTemplate.objects.filter(
-            pk__in=profile_ids,
-        ).order_by('name', 'id')
 
     def clean_urls(self):
         urls = [line.strip() for line in self.cleaned_data['urls'].splitlines()]
@@ -853,6 +841,7 @@ class StorePriceTagTemplateForm(forms.ModelForm):
         model = StorePriceTagTemplate
         fields = (
             'name', 'site_domain', 'logo', 'heading',
+            'category_detection_mode',
             'primary_color', 'accent_color', 'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
             'qr_utm_parameters', 'print_mode', 'is_active',
@@ -864,6 +853,7 @@ class StorePriceTagTemplateForm(forms.ModelForm):
             'site_domain': forms.TextInput(attrs={
                 'class': 'form-control', 'placeholder': 'es-auto.ru',
             }),
+            'category_detection_mode': forms.Select(attrs={'class': 'form-select'}),
             'logo': forms.FileInput(attrs={'class': 'form-control'}),
             'heading': forms.TextInput(attrs={'class': 'form-control'}),
             'primary_color': forms.TextInput(attrs={
@@ -883,32 +873,48 @@ class StorePriceTagTemplateForm(forms.ModelForm):
 
 
 class StorePriceTagCategoryForm(forms.ModelForm):
-    property_names = forms.MultipleChoiceField(
-        label='Свойства на ценнике',
-        required=False,
-        widget=forms.CheckboxSelectMultiple,
-        help_text='Отметьте свойства, которые нужно печатать.',
-    )
-
-    def __init__(self, *args, available_names=(), **kwargs):
+    def __init__(self, *args, profile=None, **kwargs):
+        self.profile = profile
         super().__init__(*args, **kwargs)
-        selected = self.instance.property_name_list if self.instance.pk else []
-        names = list(dict.fromkeys([*available_names, *selected]))
-        self.fields['property_names'].choices = [(name, name) for name in names]
-        self.initial['property_names'] = selected
 
-    def clean_property_names(self):
-        return '\n'.join(self.cleaned_data['property_names'])
+    def clean(self):
+        cleaned = super().clean()
+        if not self.profile:
+            return cleaned
+        if self.profile.category_detection_mode == StorePriceTagTemplate.CategoryDetectionMode.URL:
+            source_url = cleaned.get('source_url') or ''
+            hostname = (
+                parse.urlsplit(source_url).hostname or ''
+            ).casefold().removeprefix('www.')
+            if not source_url:
+                self.add_error('source_url', 'Укажите ссылку на раздел сайта.')
+            elif hostname != self.profile.site_domain:
+                self.add_error(
+                    'source_url',
+                    f'Ссылка должна вести на сайт {self.profile.site_domain}.',
+                )
+        elif not cleaned.get('match_property_name') or not cleaned.get('match_property_value'):
+            message = 'Для этого профиля укажите свойство и его значение.'
+            if not cleaned.get('match_property_name'):
+                self.add_error('match_property_name', message)
+            if not cleaned.get('match_property_value'):
+                self.add_error('match_property_value', message)
+        return cleaned
 
     class Meta:
         model = StorePriceTagCategory
-        fields = ('name', 'url_patterns', 'property_names', 'sort_order', 'is_active')
+        fields = (
+            'name', 'source_url', 'match_property_name',
+            'match_property_value', 'sort_order', 'is_active',
+        )
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'url_patterns': forms.TextInput(attrs={
+            'source_url': forms.URLInput(attrs={
                 'class': 'form-control',
-                'placeholder': '/car-box/, /snow-blowers/',
+                'placeholder': 'https://es-auto.ru/car-box/',
             }),
+            'match_property_name': forms.TextInput(attrs={'class': 'form-control'}),
+            'match_property_value': forms.TextInput(attrs={'class': 'form-control'}),
             'sort_order': forms.NumberInput(attrs={'class': 'form-control'}),
         }
 

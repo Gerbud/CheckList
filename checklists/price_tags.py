@@ -32,7 +32,9 @@ class ImportedProduct:
     product_type: str = ''
     category_name: str = ''
     displayed_properties: list = field(default_factory=list)
+    property_rows: list = field(default_factory=list)
     category_rule: object = None
+    price_tag_profile: object = None
     tracking_url: str = ''
 
     @property
@@ -386,44 +388,87 @@ def clean_product_name(value):
 
 
 def apply_category_rules(product, categories, max_properties=5):
-    parts = parse.urlsplit(product.url)
-    path = parse.unquote(parts.path).casefold()
-    full_url = parse.unquote(product.url).casefold()
     matched = None
     for category in categories:
-        if any(
-            pattern.casefold() in (
-                full_url if '://' in pattern else path
-            )
-            for pattern in category.url_pattern_list
-        ):
+        if category_matches_product(product, category):
             matched = category
             break
     product.category_rule = matched
     if matched:
-        available = {
-            name.casefold().strip().rstrip(':'): (name, value)
-            for name, value in product.properties
-        }
-        selected = []
-        for requested_name in matched.property_name_list:
-            key = requested_name.casefold().strip().rstrip(':')
-            exact = available.get(key)
-            if exact:
-                selected.append(exact)
-                continue
-            fuzzy = next(
-                (
-                    pair for available_name, pair in available.items()
-                    if key in available_name or available_name in key
-                ),
-                None,
-            )
-            if fuzzy:
-                selected.append(fuzzy)
-        product.displayed_properties = selected[:max_properties]
+        select_product_properties(
+            product,
+            matched.property_name_list,
+            max_properties,
+        )
     else:
-        product.displayed_properties = product.properties[:max_properties]
+        select_product_properties(product, (), max_properties)
+    return product
+
+
+def category_matches_product(product, category):
+    profile = category.profile
+    if (
+        profile.category_detection_mode
+        == profile.CategoryDetectionMode.PROPERTY
+    ):
+        expected_name = category.match_property_name.casefold().strip().rstrip(':')
+        expected_value = category.match_property_value.casefold().strip()
+        if not expected_name or not expected_value:
+            return False
+        return any(
+            name.casefold().strip().rstrip(':') == expected_name
+            and expected_value in value.casefold().strip()
+            for name, value in product.properties
+        )
+    if not category.source_url:
+        return False
+    product_parts = parse.urlsplit(product.url)
+    section_parts = parse.urlsplit(category.source_url)
+    product_host = (product_parts.hostname or '').casefold().removeprefix('www.')
+    section_host = (section_parts.hostname or '').casefold().removeprefix('www.')
+    product_path = parse.unquote(product_parts.path).casefold().rstrip('/') + '/'
+    section_path = parse.unquote(section_parts.path).casefold().rstrip('/') + '/'
+    return product_host == section_host and product_path.startswith(section_path)
+
+
+def select_product_properties(product, requested_names=(), max_properties=5):
+    normalized_names = [
+        name.casefold().strip().rstrip(':') for name in requested_names
+    ]
+    available = {
+        name.casefold().strip().rstrip(':'): (name, value)
+        for name, value in product.properties
+    }
+    selected = []
+    for key in normalized_names:
+        exact = available.get(key)
+        if exact:
+            selected.append(exact)
+            continue
+        fuzzy = next(
+            (
+                pair for available_name, pair in available.items()
+                if key in available_name or available_name in key
+            ),
+            None,
+        )
+        if fuzzy:
+            selected.append(fuzzy)
+    if not normalized_names:
+        selected = product.properties[:max_properties]
+    selected = selected[:max_properties]
+    selected_keys = {
+        name.casefold().strip().rstrip(':') for name, _ in selected
+    }
+    product.displayed_properties = selected
+    product.property_rows = [
+        (
+            name,
+            value,
+            name.casefold().strip().rstrip(':') in selected_keys,
+        )
+        for name, value in product.properties
+    ]
     return product
 
 

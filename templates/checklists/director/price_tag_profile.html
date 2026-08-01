@@ -21,6 +21,7 @@
 <form method="post" enctype="multipart/form-data" class="card p-4">
   <div class="row g-3">
     {% csrf_token %}
+    <input type="hidden" name="action" value="save_profile">
     {% if price_tag_template %}<input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}">{% endif %}
     {% if is_new_profile %}<input type="hidden" name="create_profile" value="1">{% endif %}
     <div class="col-12">
@@ -46,4 +47,16 @@
     <div class="col-12"><button class="btn btn-primary">Сохранить профиль сайта</button></div>
   </div>
 </form>
+
+{% if price_tag_template %}<section class="card p-4 mt-4">
+  <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+    <div><h2 class="h5 mb-1">Категории {{ price_tag_template.name }}</h2><p class="small text-secondary mb-0">{% if price_tag_template.category_detection_mode == 'url' %}Вставьте полную ссылку на раздел сайта. Товар попадёт в категорию, если его адрес начинается с адреса раздела.{% else %}Категория определяется по названию и значению свойства товара.{% endif %}</p></div>
+  </div>
+  <div class="row g-3">{% for category, category_edit_form in category_forms %}<div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">{{ category.name }}{% if not category.is_active %} <span class="badge text-bg-secondary">выключена</span>{% endif %}</summary>
+    <form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_category"><input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}"><input type="hidden" name="category_id" value="{{ category.pk }}">{% for field in category_edit_form %}{% if price_tag_template.category_detection_mode == 'url' and field.name != 'match_property_name' and field.name != 'match_property_value' or price_tag_template.category_detection_mode == 'property' and field.name != 'source_url' %}<div class="col-12">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}<div class="col-12"><button class="btn btn-sm btn-primary">Сохранить категорию</button></div></form>
+    <form method="post" class="mt-2" onsubmit="return confirm('Удалить категорию?')">{% csrf_token %}<input type="hidden" name="action" value="delete_category"><input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}"><input type="hidden" name="category_id" value="{{ category.pk }}"><button class="btn btn-sm btn-outline-danger">Удалить</button></form>
+  </details></div>{% endfor %}
+  <div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">+ Добавить категорию</summary><form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_category"><input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}">{% for field in category_form %}{% if price_tag_template.category_detection_mode == 'url' and field.name != 'match_property_name' and field.name != 'match_property_value' or price_tag_template.category_detection_mode == 'property' and field.name != 'source_url' %}<div class="col-12">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}<div class="col-12"><button class="btn btn-primary">Добавить категорию</button></div></form></details></div>
+  </div>
+</section>{% endif %}
 {% endblock %}

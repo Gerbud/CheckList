@@ -61,6 +61,10 @@ class StorePriceTagTemplate(models.Model):
         COLOR = 'color', 'Цветной принтер'
         MONOCHROME = 'monochrome', 'Чёрно-белый принтер'
 
+    class CategoryDetectionMode(models.TextChoices):
+        URL = 'url', 'По адресу раздела'
+        PROPERTY = 'property', 'По свойству товара'
+
     color_validator = RegexValidator(
         r'^#[0-9A-Fa-f]{6}$',
         'Укажите цвет в формате #112233.',
@@ -81,6 +85,12 @@ class StorePriceTagTemplate(models.Model):
         max_length=255,
         default='es-auto.ru',
         help_text='Например: es-auto.ru или pinel.ru.',
+    )
+    category_detection_mode = models.CharField(
+        'определение категории',
+        max_length=20,
+        choices=CategoryDetectionMode.choices,
+        default=CategoryDetectionMode.URL,
     )
     logo = models.ImageField(
         'логотип для ценников',
@@ -170,12 +180,29 @@ class StorePriceTagCategory(models.Model):
         related_name='categories',
     )
     name = models.CharField('категория', max_length=120)
-    url_patterns = models.TextField(
-        'фрагменты адреса категории',
-        help_text='Через запятую: /car-box/, /snow-blowers/.',
+    source_url = models.URLField(
+        'ссылка на раздел сайта',
+        max_length=500,
+        blank=True,
+        default='',
+        help_text='Например: https://es-auto.ru/car-box/.',
+    )
+    match_property_name = models.CharField(
+        'свойство для определения',
+        max_length=160,
+        blank=True,
+        default='',
+    )
+    match_property_value = models.CharField(
+        'значение свойства',
+        max_length=255,
+        blank=True,
+        default='',
     )
     property_names = models.TextField(
         'свойства на ценнике',
+        blank=True,
+        default='',
         help_text='Каждое свойство с новой строки, в нужном порядке.',
     )
     sort_order = models.PositiveIntegerField('порядок', default=0)
@@ -191,15 +218,6 @@ class StorePriceTagCategory(models.Model):
                 fields=('profile', 'name'),
                 name='unique_price_tag_category_profile',
             ),
-        ]
-
-    @property
-    def url_pattern_list(self):
-        return [
-            item.strip()
-            for line in self.url_patterns.splitlines()
-            for item in line.split(',')
-            if item.strip()
         ]
 
     @property

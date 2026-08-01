@@ -17,6 +17,7 @@ from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonRespon
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from checklists.access_control import (
     DIRECTOR_STORE_SESSION_KEY,
@@ -139,6 +140,7 @@ from checklists.price_tags import (
     build_qr_url,
     import_product,
     render_qr_svg,
+    select_product_properties,
     site_url_matches,
 )
 from checklists.shift_calendar import (
@@ -1553,109 +1555,87 @@ def _ensure_price_tag_profiles(store):
     return list(store.price_tag_templates.all())
 
 
+def _price_tag_profile_for_url(url, profiles):
+    matches = [
+        profile for profile in profiles
+        if site_url_matches(url, profile.site_domain)
+    ]
+    return max(matches, key=lambda item: len(item.site_domain), default=None)
+
+
 @price_tag_tool_required
 def price_tags(request):
     store = request.current_store
     profiles = _ensure_price_tag_profiles(store)
     active_profiles = [profile for profile in profiles if profile.is_active] or profiles
-    requested_profile_id = (
-        request.POST.get('profile')
-        or request.POST.get('profile_id')
-        or request.GET.get('profile')
-    )
-    template = next(
-        (
-            profile for profile in active_profiles
-            if str(profile.pk) == str(requested_profile_id)
-        ),
-        active_profiles[0] if active_profiles else profiles[0],
-    )
-    categories = list(template.categories.all())
-    available_names = template.available_property_names
-    links_form = PriceTagLinksForm(
-        profiles=active_profiles,
-        initial={'profile': template},
-    )
-    category_form = StorePriceTagCategoryForm(available_names=available_names)
+    links_form = PriceTagLinksForm()
     products = []
     import_errors = []
+    category_panels = []
+    unmatched_products = []
     action = request.POST.get('action') if request.method == 'POST' else ''
 
-    if action == 'save_category':
-        category_id = request.POST.get('category_id')
-        category = (
-            get_object_or_404(
-                StorePriceTagCategory,
-                pk=category_id,
-                profile=template,
-            )
-            if category_id else StorePriceTagCategory(profile=template)
-        )
-        category_form = StorePriceTagCategoryForm(
-            request.POST,
-            instance=category,
-            available_names=available_names,
-        )
-        if category_form.is_valid():
-            category_form.save()
-            messages.success(request, 'Правило категории сохранено.')
-            return redirect(
-                f"{reverse('checklists:director_price_tags')}?profile={template.pk}"
-            )
-    elif action == 'delete_category':
-        category = get_object_or_404(
-            StorePriceTagCategory,
-            pk=request.POST.get('category_id'),
-            profile=template,
-        )
-        category.delete()
-        messages.success(request, 'Правило категории удалено.')
-        return redirect(
-            f"{reverse('checklists:director_price_tags')}?profile={template.pk}"
-        )
-    elif action == 'generate':
-        links_form = PriceTagLinksForm(request.POST, profiles=active_profiles)
+    if action == 'generate':
+        links_form = PriceTagLinksForm(request.POST)
         if links_form.is_valid():
-            template = links_form.cleaned_data['profile']
-            categories = list(template.categories.all())
-            available_names = template.available_property_names
             for url in links_form.cleaned_data['urls']:
-                if not site_url_matches(url, template.site_domain):
+                profile = _price_tag_profile_for_url(url, active_profiles)
+                if not profile:
                     import_errors.append({
                         'url': url,
                         'message': (
-                            f'Ссылка не относится к профилю {template.name} '
-                            f'({template.site_domain}).'
+                            'Для домена этой ссылки не настроен профиль '
+                            'интернет-магазина.'
                         ),
                     })
                     continue
                 try:
                     product = apply_category_rules(
                         import_product(url),
-                        [item for item in categories if item.is_active],
-                        template.max_properties,
+                        list(profile.categories.filter(is_active=True)),
+                        profile.max_properties,
                     )
+                    product.price_tag_profile = profile
                     product.tracking_url = build_qr_url(
                         product.url,
-                        template.qr_utm_parameters,
+                        profile.qr_utm_parameters,
                     )
                     products.append(product)
                 except ProductImportError as exc:
                     import_errors.append({'url': url, 'message': str(exc)})
-            discovered = list(dict.fromkeys([
-                *template.available_property_names,
-                *[
-                    name for product in products
-                    for name, _ in product.properties
-                ],
-            ]))
-            if discovered != template.available_property_names:
-                template.available_property_names = discovered
-                template.save(update_fields=('available_property_names', 'updated_at'))
-                available_names = discovered
-            category_form = StorePriceTagCategoryForm(
-                available_names=available_names,
-            )
+
+            panels = {}
+            for product in products:
+                category = product.category_rule
+                if not category:
+                    unmatched_products.append(product)
+                    continue
+                panel = panels.setdefault(category.pk, {
+                    'category': category,
+                    'profile': product.price_tag_profile,
+                    'available_names': [],
+                    'products': [],
+                })
+                panel['products'].append(product)
+                for name, _ in product.properties:
+                    if name not in panel['available_names']:
+                        panel['available_names'].append(name)
+            for panel in panels.values():
+                category = panel['category']
+                selected = [
+                    name for name in category.property_name_list
+                    if name in panel['available_names']
+                ]
+                if not selected:
+                    selected = panel['available_names'][:panel['profile'].max_properties]
+                panel['selected_names'] = selected
+                for product in panel.pop('products'):
+                    select_product_properties(
+                        product,
+                        selected,
+                        panel['profile'].max_properties,
+                    )
+                category_panels.append(panel)
 
     return render(
         request,
@@ -1668,16 +1648,9 @@ def price_tags(request):
             ),
             'store': store,
             'price_tag_profiles': active_profiles,
-            'price_tag_template': template,
             'links_form': links_form,
-            'category_form': category_form,
-            'category_forms': [
-                (category, StorePriceTagCategoryForm(
-                    instance=category,
-                    available_names=available_names,
-                ))
-                for category in categories
-            ],
+            'category_panels': category_panels,
+            'unmatched_products': unmatched_products,
             'products': products,
             'product_sheets': [
                 products[index:index + 4]
@@ -1706,6 +1679,33 @@ def price_tag_qr(request):
     return HttpResponse(render_qr_svg(value), content_type='image/svg+xml')
 
 
+@require_POST
+@price_tag_tool_required
+def price_tag_category_properties(request):
+    category = get_object_or_404(
+        StorePriceTagCategory,
+        pk=request.POST.get('category_id'),
+        profile__store=request.current_store,
+    )
+    names = list(dict.fromkeys(
+        name.strip() for name in request.POST.getlist('property_names')
+        if name.strip()
+    ))
+    if len(names) > category.profile.max_properties or any(
+        len(name) > 160 for name in names
+    ):
+        return JsonResponse({
+            'ok': False,
+            'message': (
+                f'Можно выбрать не более '
+                f'{category.profile.max_properties} свойств.'
+            ),
+        }, status=400)
+    category.property_names = '\n'.join(names)
+    category.save(update_fields=('property_names', 'updated_at'))
+    return JsonResponse({'ok': True, 'selected': names})
+
+
 @price_tag_tool_required
 def price_tag_profile(request):
     if not (is_system_admin(request.user) or is_store_director(request.user)):
@@ -1726,13 +1726,49 @@ def price_tag_profile(request):
         ),
         profiles[0],
     )
+    action = request.POST.get('action', '')
+    if action == 'save_category' and template:
+        category_id = request.POST.get('category_id')
+        category = (
+            get_object_or_404(
+                StorePriceTagCategory,
+                pk=category_id,
+                profile=template,
+            )
+            if category_id else StorePriceTagCategory(profile=template)
+        )
+        category_form = StorePriceTagCategoryForm(
+            request.POST,
+            instance=category,
+            profile=template,
+        )
+        if category_form.is_valid():
+            category_form.save()
+            messages.success(request, 'Категория сайта сохранена.')
+            return redirect(
+                f"{reverse('checklists:price_tag_profile')}?profile={template.pk}"
+            )
+    elif action == 'delete_category' and template:
+        category = get_object_or_404(
+            StorePriceTagCategory,
+            pk=request.POST.get('category_id'),
+            profile=template,
+        )
+        category.delete()
+        messages.success(request, 'Категория сайта удалена.')
+        return redirect(
+            f"{reverse('checklists:price_tag_profile')}?profile={template.pk}"
+        )
+    else:
+        category_form = StorePriceTagCategoryForm(profile=template)
+
     instance = template or StorePriceTagTemplate(store=store)
     form = StorePriceTagTemplateForm(
-        request.POST or None,
-        request.FILES or None,
+        request.POST if request.method == 'POST' and action == 'save_profile' else None,
+        request.FILES if request.method == 'POST' and action == 'save_profile' else None,
         instance=instance,
     )
-    if request.method == 'POST' and form.is_valid():
+    if request.method == 'POST' and action == 'save_profile' and form.is_valid():
         template = form.save(commit=False)
         template.store = store
         template.save()
@@ -1747,6 +1783,17 @@ def price_tag_profile(request):
         'price_tag_template': template,
         'form': form,
         'is_new_profile': is_new,
+        'category_form': category_form,
+        'category_forms': [
+            (
+                category,
+                StorePriceTagCategoryForm(
+                    instance=category,
+                    profile=template,
+                ),
+            )
+            for category in template.categories.all()
+        ] if template else [],
     })
 
 
