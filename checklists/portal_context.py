@@ -1,4 +1,9 @@
+from datetime import timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
+from django.utils import timezone
 
 from checklists.access_control import (
     get_portal_home_url,
@@ -9,11 +14,14 @@ from checklists.access_control import (
 )
 from checklists.models import (
     ChecklistItem,
+    DailyChecklistStage,
     Store,
     StoreAdHocTask,
+    StoreChecklistSchedule,
     StoreEmployee,
     TelegramMessageTemplate,
 )
+from checklists.services import build_stage_schedule
 
 
 SECTION_TITLES = {
@@ -167,6 +175,11 @@ def portal_context(request):
         is_active=True,
         store__is_active=True,
     ).exists()
+    checklist_store = get_user_store(request.user)
+    checklist_warning = _header_checklist_warning(
+        request.user,
+        checklist_store,
+    )
     return {
         'portal_is_system_admin': system,
         'portal_is_store_director': director,
@@ -177,5 +190,67 @@ def portal_context(request):
         ),
         'portal_home_url': home_url,
         'personal_schedule_available': personal_schedule_available,
+        'header_checklist_available': checklist_store is not None,
+        **checklist_warning,
         'breadcrumbs': _breadcrumbs(request, store, home_url),
     }
+
+
+def _header_checklist_warning(user, store):
+    result = {
+        'header_checklist_urgent': False,
+        'header_checklist_can_warn': False,
+        'header_checklist_warning_at': '',
+        'header_checklist_deadline_at': '',
+    }
+    if store is None:
+        return result
+    schedule = StoreChecklistSchedule.objects.filter(
+        store=store,
+        is_active=True,
+    ).first()
+    if schedule is None:
+        return result
+    try:
+        store_tz = ZoneInfo(store.timezone)
+    except ZoneInfoNotFoundError:
+        return result
+    now = timezone.now()
+    checklist_date = now.astimezone(store_tz).date()
+    try:
+        stages = build_stage_schedule(store, checklist_date)
+    except Exception:
+        return result
+    current = next(
+        (
+            (code, bounds) for code, bounds in stages.items()
+            if bounds['opens_at'] <= now < bounds['deadline_at']
+        ),
+        None,
+    )
+    if current is None:
+        return result
+    section_code, bounds = current
+    warning_at = bounds['deadline_at'] - timedelta(
+        minutes=schedule.warning_minutes_before,
+    )
+    result['header_checklist_warning_at'] = warning_at.isoformat()
+    result['header_checklist_deadline_at'] = bounds['deadline_at'].isoformat()
+    stage_query = DailyChecklistStage.objects.filter(
+        daily_checklist__store=store,
+        daily_checklist__checklist_date=checklist_date,
+        section_code=section_code,
+    ).filter(
+        Q(daily_checklist__employee__user=user)
+        | Q(daily_checklist__terminal_account__user=user)
+    )
+    result['header_checklist_can_warn'] = not stage_query.filter(
+        status__in=(
+            DailyChecklistStage.Status.COMPLETED,
+            DailyChecklistStage.Status.COMPLETED_LATE,
+        ),
+    ).exists()
+    result['header_checklist_urgent'] = (
+        result['header_checklist_can_warn'] and now >= warning_at
+    )
+    return result

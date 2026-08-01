@@ -19,6 +19,7 @@ from checklists.models import (
     DailyChecklistStage,
     EmployeeProfile,
     Store,
+    StoreChecklistSchedule,
 )
 from checklists.services import (
     complete_checklist_stage,
@@ -116,6 +117,39 @@ def test_user_without_active_profile_sees_profile_error(client):
 
     assert response.status_code == 403
     assert 'Для пользователя не настроен профиль сотрудника' in response.content.decode()
+
+
+def test_header_has_checklist_and_price_tag_buttons_and_warns_at_deadline(
+    client,
+    web_setup,
+):
+    schedule = StoreChecklistSchedule.objects.create(
+        store=web_setup['store'],
+        warning_minutes_before=90,
+    )
+    _, daily = open_daily(client, web_setup)
+
+    response = client.get(reverse('checklists:dashboard'))
+    content = response.content.decode()
+
+    assert 'id="header-checklist-button"' in content
+    assert '>Чек-лист</a>' in content
+    assert '>Ценники</a>' in content
+    assert (
+        'class="btn btn-warning fw-semibold header-checklist-urgent"'
+        in content
+    )
+
+    daily.stages.filter(
+        section_code=DailyChecklistStage.SectionCode.OPENING,
+    ).update(status=DailyChecklistStage.Status.COMPLETED, completed_at=WEB_NOW)
+    completed_content = client.get(
+        reverse('checklists:dashboard'),
+    ).content.decode()
+    assert (
+        'class="btn btn-warning fw-semibold header-checklist-urgent"'
+        not in completed_content
+    )
 
 
 def test_employee_page_contains_only_own_checklist(client, web_setup):

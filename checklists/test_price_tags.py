@@ -69,7 +69,10 @@ def test_product_is_imported_from_schema_org(monkeypatch):
          "name":"Бокс Broomer Venture L","sku":"1617","brand":{"name":"Broomer"},
          "image":"/box.jpg","offers":{"price":"54990","priceCurrency":"RUB"},
          "additionalProperty":[{"name":"Объём","value":"430 л"}]}
-        </script></head></html>
+        </script></head><body>
+        <dl><dt>Вес</dt><dd>18 кг</dd></dl>
+        <span>Производитель:</span><strong>Broomer, Россия</strong>
+        </body></html>
     '''
     monkeypatch.setattr(
         'checklists.price_tags._download',
@@ -84,6 +87,9 @@ def test_product_is_imported_from_schema_org(monkeypatch):
     assert product.image_url == 'https://shop.example/box.jpg'
     assert ('Бренд', 'Broomer') in product.properties
     assert ('Объём', '430 л') in product.properties
+    assert ('Вес', '18 кг') in product.properties
+    assert ('Производитель', 'Broomer, Россия') in product.properties
+    assert product.manufacturer == 'Broomer, Россия'
     assert product.prominent_name == 'Broomer Venture L'
     assert product.secondary_name == 'Бокс'
 
@@ -373,7 +379,7 @@ def test_monochrome_price_tag_uses_utm_qr_and_header_photo(
     assert 'print-mode-monochrome' in content
     assert 'class="price-tag-head"' in content
     assert 'class="price-tag-image"' in content
-    assert 'width: 44mm; height: 27mm' in content
+    assert 'width: 38mm; height: 23mm' in content
     assert 'align-items: center; justify-content: center' in content
     assert (
         'price-tags/qr/?data=https%3A//example.test/product/%3Fvariant%3Dwhite%26'
@@ -401,6 +407,7 @@ def test_terminal_account_can_select_loaded_category_properties(
             properties=[
                 ('Мощность', '2 кВт'),
                 ('Ширина скашивания', '46 см'),
+                ('Производитель', 'Greenworks'),
             ],
         ),
     )
@@ -423,6 +430,9 @@ def test_terminal_account_can_select_loaded_category_properties(
     assert 'ES-AUTO · Газонокосилки' in content
     assert 'Мощность' in content
     assert 'Ширина скашивания' in content
+    assert 'class="price-tag-type">Газонокосилки</div>' in content
+    assert 'Производитель: Greenworks' in content
+    assert 'data-move-property="up"' in content
 
     saved = client.post(
         reverse('checklists:price_tag_category_properties'),
@@ -434,6 +444,15 @@ def test_terminal_account_can_select_loaded_category_properties(
     assert saved.status_code == 200
     category.refresh_from_db()
     assert category.property_names == 'Мощность'
+
+    too_many = client.post(
+        reverse('checklists:price_tag_category_properties'),
+        {
+            'category_id': category.pk,
+            'property_names': [f'Свойство {index}' for index in range(6)],
+        },
+    )
+    assert too_many.status_code == 400
 
     forbidden = client.post(
         reverse('checklists:price_tag_profile'),
@@ -595,6 +614,11 @@ def test_seo_product_name_is_cleaned_without_losing_variant():
     )
     assert product.secondary_name == 'Бокс на крышу'
     assert product.prominent_name == 'Element 590 (скоба)'
+
+    assert clean_product_name(
+        'Евродеталь ET4010RR багажник в сборе на рейлинги '
+        '| Купить Евродеталь в Москве, Санкт-Петербурге'
+    ) == 'Евродеталь ET4010RR багажник в сборе на рейлинги'
 
 
 def test_four_price_tags_are_grouped_on_one_a4_sheet(

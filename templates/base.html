@@ -46,6 +46,11 @@
         .answer-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
         .answer-failed { background: #fff1f2; }
         .answer-missing { background: #fff8e1; }
+        @keyframes checklistDeadlinePulse {
+            0%, 100% { background: #ffc107; border-color: #ffc107; transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 193, 7, .6); }
+            50% { background: #dc3545; border-color: #dc3545; color: #fff; transform: scale(1.06); box-shadow: 0 0 0 .45rem rgba(220, 53, 69, 0); }
+        }
+        .header-checklist-urgent { animation: checklistDeadlinePulse 1.15s ease-in-out infinite; }
         @media (min-width: 768px) {
             body { padding-bottom: 0; }
             .mobile-action-bar { position: sticky; border: 0; border-radius: 1rem; margin: 1rem 0 0; box-shadow: 0 .25rem 1rem rgba(15, 23, 42, .1); }
@@ -64,9 +69,12 @@
             {% else %}Чек-лист{% endif %}
         </a>
         {% if request.user.is_authenticated %}
-            <div class="d-flex align-items-center gap-2">
+            <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+            {% if header_checklist_available %}
+                <a id="header-checklist-button" class="btn btn-warning fw-semibold{% if header_checklist_urgent %} header-checklist-urgent{% endif %}" href="{% url 'checklists:dashboard' %}" data-can-warn="{{ header_checklist_can_warn|yesno:'1,0' }}" data-warning-at="{{ header_checklist_warning_at }}" data-deadline-at="{{ header_checklist_deadline_at }}">Чек-лист</a>
+            {% endif %}
             {% if portal_store %}
-                <a class="btn btn-warning fw-semibold" href="{% url 'checklists:director_price_tags' %}">Ценники</a>
+                <a class="btn btn-primary fw-semibold" href="{% url 'checklists:director_price_tags' %}">Ценники</a>
             {% endif %}
             {% if personal_schedule_available %}
                 <a class="btn btn-outline-light" href="{% url 'checklists:employee_schedule' %}">Мой график</a>
@@ -97,6 +105,24 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    (function () {
+        const button = document.getElementById('header-checklist-button');
+        if (!button || button.dataset.canWarn !== '1') return;
+        const warningAt = Date.parse(button.dataset.warningAt || '');
+        const deadlineAt = Date.parse(button.dataset.deadlineAt || '');
+        if (!Number.isFinite(warningAt) || !Number.isFinite(deadlineAt)) return;
+        function refreshWarning() {
+            const now = Date.now();
+            button.classList.toggle(
+                'header-checklist-urgent',
+                now >= warningAt && now < deadlineAt
+            );
+        }
+        refreshWarning();
+        window.setInterval(refreshWarning, 15000);
+    })();
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

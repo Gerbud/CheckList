@@ -8,27 +8,31 @@
   .price-tag-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: repeat(2, 105mm); grid-template-rows: repeat(2, 148.5mm); background: #fff; box-shadow: 0 .25rem 1rem rgba(15,23,42,.14); }
   .price-tag { width: 105mm; height: 148.5mm; box-sizing: border-box; background: #fff; border: .35mm dashed #94a3b8; padding: 6mm 6.5mm 6mm 7.5mm; display: flex; flex-direction: column; overflow: hidden; color: #0f172a; position: relative; }
   .price-tag::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3mm; background: var(--tag-accent); }
-  .price-tag-head { min-height: 32mm; display: grid; grid-template-columns: minmax(0, 1fr) 45mm; align-items: center; gap: 4mm; padding-bottom: 2mm; border-bottom: .3mm solid #e2e8f0; color: var(--tag-primary); }
+  .price-tag-head { min-height: 27mm; display: grid; grid-template-columns: minmax(0, 1fr) 40mm; align-items: center; gap: 3mm; padding-bottom: 1.5mm; border-bottom: .3mm solid #e2e8f0; color: var(--tag-primary); }
   .price-tag-brand { min-width: 0; }
-  .price-tag-logo { width: 44mm; height: 27mm; display: block; object-fit: contain; object-position: left center; }
+  .price-tag-logo { width: 38mm; height: 23mm; display: block; object-fit: contain; object-position: left center; }
   .price-tag-store { font-size: 5mm; font-weight: 900; line-height: 1; }
   .price-tag-heading { margin-top: 1mm; font-size: 3mm; font-weight: 700; }
-  .price-tag-product { min-height: 31mm; margin-top: 2.5mm; }
-  .price-tag-name { font-size: 6mm; line-height: 1.04; letter-spacing: -.08mm; font-weight: 950; color: var(--tag-primary); max-height: 27mm; overflow: hidden; }
+  .price-tag-product { min-height: 26mm; margin-top: 2mm; }
+  .price-tag-name { font-size: 6mm; line-height: 1.03; letter-spacing: -.08mm; font-weight: 950; color: var(--tag-primary); max-height: 25mm; overflow: hidden; }
+  .price-tag-name.name-medium { font-size: 5.2mm; }
+  .price-tag-name.name-long { font-size: 4.5mm; line-height: 1.02; }
+  .price-tag-name.name-very-long { font-size: 3.8mm; line-height: 1; }
   .price-tag-name[contenteditable="true"] { border-radius: 1.5mm; outline: .35mm dashed transparent; }
   .price-tag-name[contenteditable="true"]:hover,
   .price-tag-name[contenteditable="true"]:focus { outline-color: var(--tag-accent); background: #fff7ed; }
   .price-tag-type { color: #64748b; font-size: 3.3mm; font-weight: 750; margin-bottom: 1.5mm; }
-  .price-tag-image { width: 45mm; height: 31mm; display: block; object-fit: contain; object-position: center; }
-  .price-tag-image-placeholder { width: 45mm; height: 31mm; }
+  .price-tag-image { width: 40mm; height: 26mm; display: block; object-fit: contain; object-position: center; }
+  .price-tag-image-placeholder { width: 40mm; height: 26mm; }
   .price-tag-sku { font-size: 3.2mm; color: #475569; margin-top: 2mm; }
-  .price-tag-price { margin: 3mm 0; padding: 3mm 4mm; border-radius: 3mm; background: var(--tag-primary); color: #fff; font-size: 10.5mm; font-weight: 950; line-height: 1; text-align: center; white-space: nowrap; }
-  .price-tag-properties { display: grid; gap: 1.1mm; font-size: 3.2mm; line-height: 1.16; }
+  .price-tag-sku-line { display: flex; justify-content: space-between; gap: 2mm; flex-wrap: wrap; }
+  .price-tag-price { margin: 2.2mm 0; padding: 2.8mm 4mm; border-radius: 3mm; background: var(--tag-primary); color: #fff; font-size: 10mm; font-weight: 950; line-height: 1; text-align: center; white-space: nowrap; }
+  .price-tag-properties { display: grid; gap: .8mm; max-height: 31mm; overflow: hidden; font-size: 3.1mm; line-height: 1.12; }
   .price-tag-property { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 2mm; border-bottom: .25mm solid #e2e8f0; padding-bottom: .8mm; }
   .price-tag-property span:first-child { color: #64748b; }
   .price-tag-property strong { text-align: right; overflow-wrap: anywhere; }
-  .price-tag-footer { margin-top: auto; min-height: 20mm; padding: 3mm 24mm 0 0; border-top: .3mm solid #e2e8f0; display: flex; align-items: end; justify-content: space-between; gap: 3mm; color: #64748b; font-size: 2.6mm; }
-  .price-tag-qr { position: absolute; right: 5.5mm; bottom: 4.5mm; width: 21mm; height: 21mm; box-sizing: border-box; padding: .8mm; display: flex; align-items: center; justify-content: center; line-height: 0; background: #fff; border: .25mm solid #e2e8f0; }
+  .price-tag-footer { margin-top: auto; min-height: 23mm; padding-top: 2mm; border-top: .3mm solid #e2e8f0; display: grid; grid-template-columns: minmax(0, 1fr) auto 21mm; align-items: end; gap: 2mm; color: #64748b; font-size: 2.5mm; }
+  .price-tag-qr { width: 21mm; height: 21mm; box-sizing: border-box; padding: .8mm; display: flex; align-items: center; justify-content: center; align-self: end; line-height: 0; background: #fff; border: .25mm solid #e2e8f0; }
   .price-tag-qr-image { width: 18.5mm; height: 18.5mm; display: block; object-fit: contain; object-position: center; }
   .price-tag.print-mode-monochrome .price-tag-logo,
   .price-tag.print-mode-monochrome .price-tag-image { filter: grayscale(1) contrast(1.15); }
@@ -80,57 +84,135 @@
 
 {% if import_errors %}<div class="alert alert-warning"><strong>Некоторые ссылки не удалось обработать:</strong><ul class="mb-0 mt-2">{% for error in import_errors %}<li><span class="text-break">{{ error.url }}</span> — {{ error.message }}</li>{% endfor %}</ul></div>{% endif %}
 
-{% if products %}<section class="card p-3 mb-4 no-print"><div><h2 class="h5 mb-1">Свойства найденных категорий</h2><p class="small text-secondary">Здесь показаны только свойства товаров из соответствующей категории. Изменения сразу применяются к предпросмотру.</p></div>{% if unmatched_products %}<div class="alert alert-warning"><strong>Не определена категория:</strong> {% for product in unmatched_products %}{{ product.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Директору нужно добавить правило в профиле сайта.</div>{% endif %}<div class="row g-3">{% for panel in category_panels %}<div class="col-12 col-xl-6"><div class="border rounded-3 p-3" data-category-panel data-category-id="{{ panel.category.pk }}" data-max-properties="{{ panel.profile.max_properties }}"><div class="d-flex justify-content-between gap-2 mb-2"><strong>{{ panel.profile.name }} · {{ panel.category.name }}</strong><span class="small text-secondary">до {{ panel.profile.max_properties }}</span></div><div class="row g-2">{% for name in panel.available_names %}<div class="col-12 col-md-6"><label class="form-check"><input class="form-check-input" type="checkbox" data-property-toggle value="{{ name }}" {% if name in panel.selected_names %}checked{% endif %}> <span class="form-check-label">{{ name }}</span></label></div>{% endfor %}</div><div class="small text-secondary mt-2" data-save-status></div></div></div>{% empty %}<div class="col-12"><div class="alert alert-warning mb-0">Для загруженных товаров категория не определена. Директору нужно настроить категории в профиле сайта.</div></div>{% endfor %}</div></section>{% endif %}
+{% if products %}<section class="card p-3 mb-4 no-print">
+  <div><h2 class="h5 mb-1">Свойства найденных категорий</h2><p class="small text-secondary">Отметьте до 5 свойств. Стрелками измените их порядок на ценнике — выбор и сортировка сохранятся.</p></div>
+  {% if unmatched_products %}<div class="alert alert-warning"><strong>Не определена категория:</strong> {% for product in unmatched_products %}{{ product.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Директору нужно добавить правило в профиле сайта.</div>{% endif %}
+  <div class="row g-3">{% for panel in category_panels %}<div class="col-12 col-xl-6"><div class="border rounded-3 p-3" data-category-panel data-category-id="{{ panel.category.pk }}" data-max-properties="{{ panel.max_properties }}">
+    <div class="d-flex justify-content-between gap-2 mb-2"><strong>{{ panel.profile.name }} · {{ panel.category.name }}</strong><span class="small text-secondary">до {{ panel.max_properties }}</span></div>
+    <div class="d-grid gap-2" data-property-list>{% for name in panel.available_names %}<div class="d-flex align-items-center gap-2 border rounded-2 px-2 py-1" data-property-choice>
+      <label class="form-check flex-grow-1 mb-0"><input class="form-check-input" type="checkbox" data-property-toggle value="{{ name }}" {% if name in panel.selected_names %}checked{% endif %}> <span class="form-check-label">{{ name }}</span></label>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Порядок свойства"><button class="btn btn-outline-secondary" type="button" data-move-property="up" title="Поднять">↑</button><button class="btn btn-outline-secondary" type="button" data-move-property="down" title="Опустить">↓</button></div>
+    </div>{% endfor %}</div>
+    <div class="small text-secondary mt-2" data-save-status></div>
+  </div></div>{% empty %}<div class="col-12"><div class="alert alert-warning mb-0">Для загруженных товаров категория не определена. Директору нужно настроить категории в профиле сайта.</div></div>{% endfor %}</div>
+</section>{% endif %}
 
 {% if products %}<section class="price-tag-print-area" aria-label="Готовые ценники">
   <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника</span></div>
   <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
     {% with template=product.price_tag_profile %}<article class="price-tag print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
       <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}{% if template.heading %}<div class="price-tag-heading">{{ template.heading }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" src="{{ product.image_url }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
-      <div class="price-tag-product"><div class="price-tag-type">{{ product.secondary_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku %}<div class="price-tag-sku">Артикул: {{ product.sku }}</div>{% endif %}</div>
+      <div class="price-tag-product"><div class="price-tag-type">{{ product.price_tag_category_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
       <div class="price-tag-price">{{ product.formatted_price }}</div>
       {% if template.show_properties and product.property_rows %}<div class="price-tag-properties">{% for name, value, selected in product.property_rows %}<div class="price-tag-property{% if not selected %} d-none{% endif %}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-property-name="{{ name }}"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
-      <footer class="price-tag-footer"><span>{{ template.footer|default:store.name }}</span><span>Дата печати: {{ printed_on|date:"d.m.Y" }}</span></footer><a class="price-tag-qr" href="{{ product.qr_url }}" aria-label="Открыть страницу товара"><img class="price-tag-qr-image" src="{% url 'checklists:price_tag_qr' %}?data={{ product.qr_url|urlencode }}" alt="QR-код товара"></a>
+      <footer class="price-tag-footer"><span>{{ template.footer|default:store.name }}</span><span>Дата печати: {{ printed_on|date:"d.m.Y" }}</span><a class="price-tag-qr" href="{{ product.qr_url }}" aria-label="Открыть страницу товара"><img class="price-tag-qr-image" src="{% url 'checklists:price_tag_qr' %}?data={{ product.qr_url|urlencode }}" alt="QR-код товара"></a></footer>
     </article>{% endwith %}
   {% endfor %}</div>{% endfor %}</div>
 </section>{% endif %}
 {% if products %}<script>
 (function () {
   const csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]')?.value || '';
+
+  function selectedInputs(panel) {
+    return Array.from(panel.querySelectorAll('[data-property-choice]'))
+      .map(function (choice) { return choice.querySelector('[data-property-toggle]'); })
+      .filter(function (checkbox) { return checkbox.checked; });
+  }
+
+  function updatePropertyPreview(panel, selected) {
+    const orderedNames = selected.map(function (item) { return item.value; });
+    document.querySelectorAll('.price-tag-properties').forEach(function (list) {
+      const rows = Array.from(list.querySelectorAll(
+        '.price-tag-property[data-category-id="' + panel.dataset.categoryId + '"]'
+      ));
+      if (!rows.length) return;
+      const byName = new Map(rows.map(function (row) {
+        return [row.dataset.propertyName, row];
+      }));
+      orderedNames.forEach(function (name) {
+        const row = byName.get(name);
+        if (row) {
+          row.classList.remove('d-none');
+          list.appendChild(row);
+        }
+      });
+      rows.forEach(function (row) {
+        if (!orderedNames.includes(row.dataset.propertyName)) {
+          row.classList.add('d-none');
+          list.appendChild(row);
+        }
+      });
+    });
+  }
+
+  function savePropertySelection(panel) {
+    const status = panel.querySelector('[data-save-status]');
+    const selected = selectedInputs(panel);
+    updatePropertyPreview(panel, selected);
+    const payload = new FormData();
+    payload.append('category_id', panel.dataset.categoryId);
+    selected.forEach(function (item) { payload.append('property_names', item.value); });
+    status.textContent = 'Сохраняем…';
+    fetch('{% url "checklists:price_tag_category_properties" %}', {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken},
+      body: payload,
+      credentials: 'same-origin'
+    }).then(function (response) {
+      if (!response.ok) throw new Error('save failed');
+      status.textContent = 'Выбор и порядок сохранены';
+    }).catch(function () {
+      status.textContent = 'Не удалось сохранить. Повторите выбор.';
+    });
+  }
+
   document.querySelectorAll('[data-category-panel]').forEach(function (panel) {
     const status = panel.querySelector('[data-save-status]');
     panel.querySelectorAll('[data-property-toggle]').forEach(function (checkbox) {
       checkbox.addEventListener('change', function () {
-        const selected = Array.from(panel.querySelectorAll('[data-property-toggle]:checked'));
+        const selected = selectedInputs(panel);
         const maxProperties = Number(panel.dataset.maxProperties || 5);
         if (selected.length > maxProperties) {
           checkbox.checked = false;
-          status.textContent = 'Можно выбрать не более ' + maxProperties + ' свойств.';
+          status.textContent = 'Уже выбрано ' + maxProperties + ' свойств. Сначала уберите одно, затем выберите другое.';
           return;
         }
-        const selectedNames = new Set(selected.map(function (item) { return item.value; }));
-        document.querySelectorAll('.price-tag-property[data-category-id="' + panel.dataset.categoryId + '"]').forEach(function (row) {
-          row.classList.toggle('d-none', !selectedNames.has(row.dataset.propertyName));
-        });
-        const payload = new FormData();
-        payload.append('category_id', panel.dataset.categoryId);
-        selected.forEach(function (item) { payload.append('property_names', item.value); });
-        status.textContent = 'Сохраняем…';
-        fetch('{% url "checklists:price_tag_category_properties" %}', {
-          method: 'POST',
-          headers: {'X-CSRFToken': csrfToken},
-          body: payload,
-          credentials: 'same-origin'
-        }).then(function (response) {
-          if (!response.ok) throw new Error('save failed');
-          status.textContent = 'Выбор сохранён';
-        }).catch(function () {
-          status.textContent = 'Не удалось сохранить. Повторите выбор.';
-        });
+        savePropertySelection(panel);
+      });
+    });
+    panel.querySelectorAll('[data-move-property]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        const choice = button.closest('[data-property-choice]');
+        const direction = button.dataset.moveProperty;
+        if (direction === 'up' && choice.previousElementSibling) {
+          choice.parentElement.insertBefore(choice, choice.previousElementSibling);
+        } else if (direction === 'down' && choice.nextElementSibling) {
+          choice.parentElement.insertBefore(choice.nextElementSibling, choice);
+        } else {
+          return;
+        }
+        savePropertySelection(panel);
       });
     });
   });
+
+  function fitPriceTagName(name) {
+    name.style.fontSize = '';
+    name.classList.remove('name-medium', 'name-long', 'name-very-long');
+    const length = name.textContent.trim().length;
+    if (length > 90) name.classList.add('name-very-long');
+    else if (length > 65) name.classList.add('name-long');
+    else if (length > 42) name.classList.add('name-medium');
+    let size = parseFloat(window.getComputedStyle(name).fontSize);
+    while (name.scrollHeight > name.clientHeight + 1 && size > 11) {
+      size -= 0.5;
+      name.style.fontSize = size + 'px';
+    }
+  }
+
   document.querySelectorAll('.price-tag-name[contenteditable="true"]').forEach(function (name) {
+    fitPriceTagName(name);
+    name.addEventListener('input', function () { fitPriceTagName(name); });
     name.addEventListener('paste', function (event) {
       event.preventDefault();
       document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));

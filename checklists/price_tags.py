@@ -62,6 +62,23 @@ class ImportedProduct:
         return self.product_type or self.category_name or 'Товар'
 
     @property
+    def price_tag_category_name(self):
+        if self.category_rule:
+            return self.category_rule.name
+        return self.secondary_name
+
+    @property
+    def manufacturer(self):
+        for preferred_names in (
+            {'производитель', 'производител', 'manufacturer'},
+            {'бренд', 'brand'},
+        ):
+            for name, value in self.properties:
+                if name.casefold().strip().rstrip(':') in preferred_names:
+                    return value
+        return self.brand
+
+    @property
     def qr_url(self):
         return self.tracking_url or self.url
 
@@ -142,6 +159,8 @@ class _ProductHTMLParser(HTMLParser):
         self._script_parts = []
         self._row = None
         self._cell = None
+        self._definition_term = None
+        self._definition_value = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -158,6 +177,10 @@ class _ProductHTMLParser(HTMLParser):
             self._row = []
         elif tag in {'td', 'th'} and self._row is not None:
             self._cell = []
+        elif tag == 'dt':
+            self._definition_term = []
+        elif tag == 'dd':
+            self._definition_value = []
         elif tag == 'script' and 'ld+json' in attrs.get('type', '').lower():
             self._in_json_ld = True
             self._script_parts = []
@@ -176,6 +199,15 @@ class _ProductHTMLParser(HTMLParser):
             if len(self._row) >= 2:
                 self.rows.append(self._row)
             self._row = None
+        elif tag == 'dt' and self._definition_term is not None:
+            value = re.sub(r'\s+', ' ', ''.join(self._definition_term)).strip()
+            self._definition_term = value or None
+        elif tag == 'dd' and self._definition_value is not None:
+            value = re.sub(r'\s+', ' ', ''.join(self._definition_value)).strip()
+            if isinstance(self._definition_term, str) and value:
+                self.rows.append([self._definition_term, value])
+            self._definition_term = None
+            self._definition_value = None
         elif tag == 'script' and self._in_json_ld:
             raw = ''.join(self._script_parts).strip()
             if raw:
@@ -192,6 +224,10 @@ class _ProductHTMLParser(HTMLParser):
             self.h1_parts.append(data)
         if self._cell is not None:
             self._cell.append(data)
+        if isinstance(self._definition_term, list):
+            self._definition_term.append(data)
+        if self._definition_value is not None:
+            self._definition_value.append(data)
         if not self._in_json_ld:
             value = re.sub(r'\s+', ' ', data).strip()
             if value:
@@ -293,6 +329,19 @@ def _absolute_url(value, base_url):
     return parse.urljoin(base_url, str(value)) if value else ''
 
 
+def _looks_like_property_name(value):
+    normalized = value.casefold().strip().rstrip(':')
+    markers = (
+        'производит', 'бренд', 'гарант', 'объем', 'объём', 'размер',
+        'цвет', 'поверхност', 'грузоподъем', 'грузоподъём', 'вес',
+        'креплен', 'открыт', 'замок', 'профил', 'установк', 'материал',
+        'мощност', 'напряжен', 'емкост', 'ёмкост', 'ширин', 'длин',
+        'высот', 'диаметр', 'скорост', 'оборот', 'тип', 'вид', 'место',
+        'комплект', 'модель', 'артикул',
+    )
+    return any(marker in normalized for marker in markers)
+
+
 def _properties(product, parser=None):
     result = []
     values = product.get('additionalProperty') or []
@@ -321,6 +370,19 @@ def _properties(product, parser=None):
             ):
                 result.append((name, value))
                 seen.add(name.casefold())
+        for index, text in enumerate(parser.text_parts[:-1]):
+            name = text.strip().rstrip(':')
+            value = parser.text_parts[index + 1].strip()
+            key = name.casefold()
+            if (
+                text.strip().endswith(':')
+                and _looks_like_property_name(name)
+                and 1 < len(name) <= 80
+                and 0 < len(value) <= 160
+                and key not in seen
+            ):
+                result.append((name, value))
+                seen.add(key)
     return result
 
 
@@ -374,6 +436,7 @@ def _product_identity(product, name, properties, meta):
 def clean_product_name(value):
     value = re.sub(r'\s+', ' ', str(value)).strip()
     value = re.sub(r'^Купить\s+', '', value, flags=re.I)
+    value = re.split(r'\s*\|\s*(?:купить|цена|заказать)\b', value, maxsplit=1, flags=re.I)[0]
     value = re.split(r'\s+[—-]\s*купить\b', value, maxsplit=1, flags=re.I)[0]
     value = re.split(r'\s+в магазине\s+', value, maxsplit=1, flags=re.I)[0]
     value = re.sub(
@@ -432,6 +495,7 @@ def category_matches_product(product, category):
 
 
 def select_product_properties(product, requested_names=(), max_properties=5):
+    max_properties = min(max_properties, 5)
     normalized_names = [
         name.casefold().strip().rstrip(':') for name in requested_names
     ]
@@ -461,14 +525,18 @@ def select_product_properties(product, requested_names=(), max_properties=5):
         name.casefold().strip().rstrip(':') for name, _ in selected
     }
     product.displayed_properties = selected
+    remaining = [
+        (name, value) for name, value in product.properties
+        if name.casefold().strip().rstrip(':') not in selected_keys
+    ]
     product.property_rows = [
         (
             name,
             value,
-            name.casefold().strip().rstrip(':') in selected_keys,
+            True,
         )
-        for name, value in product.properties
-    ]
+        for name, value in selected
+    ] + [(name, value, False) for name, value in remaining]
     return product
 
 

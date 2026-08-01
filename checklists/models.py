@@ -130,7 +130,7 @@ class StorePriceTagTemplate(models.Model):
     max_properties = models.PositiveSmallIntegerField(
         'максимум характеристик',
         default=5,
-        validators=[MinValueValidator(1), MaxValueValidator(8)],
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
     )
     footer = models.CharField(
         'текст внизу',

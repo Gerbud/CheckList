@@ -1563,6 +1563,10 @@ def _price_tag_profile_for_url(url, profiles):
     return max(matches, key=lambda item: len(item.site_domain), default=None)
 
 
+def _price_tag_property_limit(profile):
+    return min(profile.max_properties, 5)
+
+
 @price_tag_tool_required
 def price_tags(request):
     store = request.current_store
@@ -1590,10 +1594,11 @@ def price_tags(request):
                     })
                     continue
                 try:
+                    property_limit = _price_tag_property_limit(profile)
                     product = apply_category_rules(
                         import_product(url),
                         list(profile.categories.filter(is_active=True)),
-                        profile.max_properties,
+                        property_limit,
                     )
                     product.price_tag_profile = profile
                     product.tracking_url = build_qr_url(
@@ -1626,14 +1631,23 @@ def price_tags(request):
                     name for name in category.property_name_list
                     if name in panel['available_names']
                 ]
+                panel['available_names'] = [
+                    *selected,
+                    *[
+                        name for name in panel['available_names']
+                        if name not in selected
+                    ],
+                ]
+                property_limit = _price_tag_property_limit(panel['profile'])
                 if not selected:
-                    selected = panel['available_names'][:panel['profile'].max_properties]
+                    selected = panel['available_names'][:property_limit]
                 panel['selected_names'] = selected
+                panel['max_properties'] = property_limit
                 for product in panel.pop('products'):
                     select_product_properties(
                         product,
                         selected,
-                        panel['profile'].max_properties,
+                        property_limit,
                     )
                 category_panels.append(panel)
 
@@ -1691,14 +1705,15 @@ def price_tag_category_properties(request):
         name.strip() for name in request.POST.getlist('property_names')
         if name.strip()
     ))
-    if len(names) > category.profile.max_properties or any(
+    property_limit = _price_tag_property_limit(category.profile)
+    if len(names) > property_limit or any(
         len(name) > 160 for name in names
     ):
         return JsonResponse({
             'ok': False,
             'message': (
                 f'Можно выбрать не более '
-                f'{category.profile.max_properties} свойств.'
+                f'{property_limit} свойств.'
             ),
         }, status=400)
     category.property_names = '\n'.join(names)
