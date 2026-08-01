@@ -551,7 +551,7 @@ def _pinel_variant_label(name):
         return 'Без АКБ и ЗУ'
     capacity = re.search(
         r'(?:с\s+)?АКБ\s+((?:\d+\s*[xх×]\s*)?\d+(?:[.,]\d+)?)\s*'
-        r'(?:А\s*[/\*]?\s*ч|Ач)',
+        r'(?:А\s*[/.*]?\s*ч|Ач)',
         name,
         re.IGNORECASE,
     )
@@ -559,7 +559,7 @@ def _pinel_variant_label(name):
         value = re.sub(r'\s*[xх×]\s*', '×', capacity.group(1))
         return f'+ АКБ {value.replace(".", ",")} А/ч и ЗУ'
     bare_capacity = re.fullmatch(
-        r'\s*((?:\d+\s*[xх×]\s*)?\d+(?:[.,]\d+)?)\s*А\s*/?\s*ч\s*',
+        r'\s*((?:\d+\s*[xх×]\s*)?\d+(?:[.,]\d+)?)\s*А\s*[/.*]?\s*ч\s*',
         name,
         re.IGNORECASE,
     )

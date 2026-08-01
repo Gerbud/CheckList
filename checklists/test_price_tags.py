@@ -240,7 +240,7 @@ def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
       </div>
       <div class="product__item product_item-js">
       <a href="/catalog/sku/2178/" class="item__title">
-        Фонарь Greenworks, АКБ 2 А/ч и ЗУ</a>
+        Фонарь Greenworks, АКБ 2 А.ч и ЗУ</a>
       <p class="item__vendor_code">Артикул: 3502407UA</p>
       <span class="base__price">Нет в наличии</span>
       </div>
