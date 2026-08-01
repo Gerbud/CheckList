@@ -25,6 +25,45 @@
 {% if trend %}<div class="report-chart" role="img" aria-label="Процент выполнения по дням">{% for day in trend %}<div class="report-bar"><div class="small">{{ day.completion }}%</div><div class="report-bar-fill" style="height: {{ day.completion }}px"></div><small>{{ day.date|date:"d.m" }}</small></div>{% endfor %}</div>
 <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Дата</th><th>Выполнение</th><th>Failed</th><th>Поздние этапы</th></tr></thead><tbody>{% for day in trend %}<tr><td>{{ day.date|date:"d.m.Y" }}</td><td>{{ day.completion }}%</td><td>{{ day.failed }}</td><td>{{ day.late }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="mb-0">За выбранный период ещё нет чек-листов. После заполнения здесь появится динамика.</p>{% endif %}
 </section>
+<section class="mb-4" aria-labelledby="days-title">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div><h2 id="days-title" class="h4 mb-1">Выполнение по дням</h2><p class="text-secondary mb-0">Проблемные дни раскрыты автоматически. Нажмите на день, чтобы увидеть все задачи.</p></div>
+    <div class="small"><span class="badge text-bg-danger">Есть проблемы</span> <span class="badge text-bg-success">Всё в порядке</span></div>
+  </div>
+  <div class="d-grid gap-3">
+  {% for row in daily_rows %}
+    <details class="card day-report health-{{ row.health_code }}" {% if row.health_code != 'normal' and not row.excluded_from_statistics %}open{% endif %}>
+      <summary class="day-report-summary">
+        <div><strong class="fs-5">{{ row.daily.checklist_date|date:"d.m.Y" }}</strong><div class="small text-secondary">{{ row.daily.checklist_date|date:"l" }}</div></div>
+        <span class="badge {% if row.health_code == 'critical' %}text-bg-danger{% elif row.health_code == 'attention' %}text-bg-warning{% else %}text-bg-success{% endif %}">{{ row.health_label }}</span>
+        <div class="d-flex flex-wrap gap-2 small">
+          <span>✅ Выполнено: <strong>{{ row.done_count }}</strong></span>
+          <span>❌ Не выполнено: <strong>{{ row.failed_count }}</strong></span>
+          <span>⏳ Без ответа: <strong>{{ row.missing_count }}</strong></span>
+        </div>
+      </summary>
+      <div class="day-report-body">
+        <p class="small text-secondary mb-3">Смена: {% for assignment in row.assignments %}{{ assignment.employee.display_name }}{% if assignment.is_responsible_for_checklist %} (ответственный){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}не назначена{% endfor %}</p>
+        {% for item in row.stages %}
+        <section class="border rounded-3 p-3 mb-3 {% if item.failed or item.missing %}health-critical{% elif item.stage.status == 'completed_late' %}health-attention{% else %}health-normal{% endif %}">
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2"><h3 class="h5 mb-0">{{ item.stage.get_section_code_display }}</h3><strong>{{ item.stage.get_status_display }}</strong></div>
+          <div class="small text-secondary mb-3">Выполнено: {{ item.done }} · Не выполнено: {{ item.failed }} · Без ответа: {{ item.missing }} · Завершил: {{ item.stage.completed_by_employee.display_name|default:"—" }}</div>
+          <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Задача</th><th>Результат</th><th>Сотрудник</th><th>Комментарий</th></tr></thead><tbody>
+          {% for answer_row in item.answers %}<tr class="{% if answer_row.answer.status == 'failed' %}answer-failed{% elif answer_row.missing %}answer-missing{% endif %}">
+            <td><strong>{{ answer_row.answer.daily_item.item_text }}</strong>{% if answer_row.answer.daily_item.item_description %}<div class="small text-secondary">{{ answer_row.answer.daily_item.item_description }}</div>{% endif %}</td>
+            <td><span class="answer-result">{% if answer_row.answer.status == 'completed' %}✅{% elif answer_row.answer.status == 'failed' %}❌{% elif answer_row.answer.status == 'not_applicable' %}➖{% elif answer_row.missing %}⏳{% else %}🔢{% endif %} {{ answer_row.label }}</span></td>
+            <td>{% if answer_row.answer.last_edited_by_employee %}{{ answer_row.answer.last_edited_by_employee.display_name }}{% elif answer_row.answer.answered_by_employee %}{{ answer_row.answer.answered_by_employee.display_name }}{% else %}—{% endif %}<div class="small text-secondary">{{ answer_row.answer.answered_at|date:"H:i"|default:"—" }}</div></td>
+            <td class="answer-comment">{% if answer_row.answer.comment %}{{ answer_row.answer.comment }}{% elif answer_row.answer.status == 'failed' %}<strong class="text-danger">Комментарий не оставлен</strong>{% else %}—{% endif %}</td>
+          </tr>{% endfor %}
+          </tbody></table></div>
+        </section>
+        {% endfor %}
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'checklists:director_checklist_detail' row.daily.pk %}">Открыть полный чек-лист</a>
+      </div>
+    </details>
+  {% empty %}<div class="alert alert-secondary mb-0">За выбранный период ещё нет чек-листов.</div>{% endfor %}
+  </div>
+</section>
 <div class="row g-3">
 <div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_daily' %}"><h2 class="h5">Ежедневный отчёт</h2><span>Этапы, ответы, задачи и уведомления</span></a></div>
 <div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_employees' %}"><h2 class="h5">Сотрудники</h2><span>Участие, нарушения и карточки сотрудников</span></a></div>

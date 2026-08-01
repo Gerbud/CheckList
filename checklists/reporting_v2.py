@@ -495,8 +495,21 @@ def build_daily_rows(store, period):
                     answer.daily_item.is_required and not _answer_is_missing(answer)
                     for answer in answers
                 ),
+                'done': sum(
+                    answer.status == ChecklistAnswer.Status.COMPLETED
+                    or (
+                        answer.daily_item.answer_type_snapshot
+                        == ChecklistItem.AnswerType.INTEGER
+                        and answer.integer_value is not None
+                    )
+                    for answer in answers
+                ),
                 'failed': sum(
                     answer.status == ChecklistAnswer.Status.FAILED
+                    for answer in answers
+                ),
+                'not_applicable': sum(
+                    answer.status == ChecklistAnswer.Status.NOT_APPLICABLE
                     for answer in answers
                 ),
                 'missing': sum(
@@ -557,6 +570,9 @@ def build_daily_rows(store, period):
                 + int(row['stage'].status == DailyChecklistStage.Status.COMPLETED_LATE)
                 for row in stage_rows
             ),
+            'done_count': sum(row['done'] for row in stage_rows),
+            'failed_count': sum(row['failed'] for row in stage_rows),
+            'missing_count': sum(row['missing'] for row in stage_rows),
             'health_code': (
                 'normal' if excluded_from_statistics
                 else 'critical' if has_critical

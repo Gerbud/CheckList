@@ -203,6 +203,33 @@ def test_dashboard_starts_with_attention_and_explains_health(client, report_setu
     assert 'Обязательный вопрос без ответа' in content
 
 
+def test_dashboard_shows_daily_answers_and_failure_comment(client, report_setup):
+    complete_all(report_setup)
+    answer = ChecklistAnswer.objects.filter(
+        daily_item__daily_checklist=report_setup['daily']
+    ).first()
+    ChecklistAnswer.objects.filter(pk=answer.pk).update(
+        status=ChecklistAnswer.Status.FAILED,
+        comment='Не привезли расходники, передать утренней смене',
+    )
+    client.force_login(report_setup['director'])
+
+    response = client.get(
+        report_url(
+            'director_reports',
+            date_from=WORK_DATE,
+            date_to=WORK_DATE,
+        )
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'Выполнение по дням' in content
+    assert 'Не выполнено: <strong>1</strong>' in content
+    assert 'Не привезли расходники, передать утренней смене' in content
+    assert '<details class="card day-report health-attention" open>' in content
+
+
 def test_overdue_stage_and_task_are_detected(report_setup):
     DailyChecklistStage.objects.filter(
         daily_checklist=report_setup['daily']

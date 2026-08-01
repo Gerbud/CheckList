@@ -1503,6 +1503,7 @@ def director_reports(request):
     store = request.current_store
     period = _report_period_v2(request, store)
     dashboard = build_report_dashboard(store, period)
+    daily_rows = build_daily_rows(store, period)
     return render(
         request,
         'checklists/director/reports_index.html',
@@ -1511,6 +1512,7 @@ def director_reports(request):
             'store': store,
             'period': period,
             'generated_at': timezone.now(),
+            'daily_rows': daily_rows,
             **dashboard,
         },
     )
