@@ -1125,6 +1125,37 @@ def test_only_admin_roles_can_force_price_tag_refresh(
     assert 'Загрузить свежие данные с сайта' in director_response.content.decode()
 
 
+def test_price_tag_import_releases_database_connection_before_network_work(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    closed = []
+    monkeypatch.setattr(
+        'checklists.portal_views.connection.close',
+        lambda: closed.append(True),
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(url=url, name='Тестовый товар', price='1000'),
+    )
+    client.force_login(price_tag_setup['director'])
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {
+            'action': 'generate',
+            'urls': (
+                'https://example.test/product/one/\n'
+                'https://example.test/product/two/'
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(closed) == 2
+
+
 def test_seo_product_name_is_cleaned_without_losing_variant():
     value = (
         'Купить бокс на крышу Element 590 белый карбон '
