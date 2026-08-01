@@ -884,6 +884,55 @@ def test_mixed_domains_automatically_use_their_own_profiles(
     assert content.count('class="price-tag-name" contenteditable="true"') == 2
 
 
+def test_missing_pinel_category_is_created_automatically(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    product_url = 'https://pinel.test/catalog/sku/2178/'
+    product = ImportedProduct(
+        url=product_url,
+        name='Фонарь Greenworks 24V G24SL200 | 3502407UA',
+        price='1990',
+        sku='3502407UA',
+        product_type='Фонарь',
+        properties=[('Вольтаж', '24V'), ('Модель', 'G24SL200')],
+        price_variants=[
+            {
+                'label': 'Без АКБ и ЗУ', 'price': '1490',
+                'currency': 'RUB', 'url': f'{product_url}base', 'is_base': True,
+            },
+            {
+                'label': '+ АКБ 2 А/ч и ЗУ', 'price': '1990',
+                'currency': 'RUB', 'url': product_url, 'is_base': False,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product', lambda url: product,
+    )
+    client.force_login(price_tag_setup['director'])
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': product_url},
+    )
+    content = response.content.decode()
+
+    category = StorePriceTagCategory.objects.get(
+        profile=price_tag_setup['pinel_profile'],
+        name='Фонарь',
+    )
+    assert response.status_code == 200
+    assert category.property_name_list == ['Вольтаж', 'Модель']
+    assert category.available_property_names == ['Вольтаж', 'Модель']
+    assert 'Не определена категория' not in content
+    assert 'Greenworks 24V G24SL200' in content
+    assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
+    assert 'class="price-tag-price-variants"' in content
+    assert 'Без АКБ и ЗУ' in content
+
+
 def test_seo_product_name_is_cleaned_without_losing_variant():
     value = (
         'Купить бокс на крышу Element 590 белый карбон '

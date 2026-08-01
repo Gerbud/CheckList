@@ -1627,6 +1627,45 @@ def _price_tag_property_limit(profile):
     return min(profile.max_properties, 5)
 
 
+def _ensure_product_price_tag_category(profile, product, property_limit):
+    if product.category_rule:
+        return product
+    category_name = (
+        product.product_type or product.category_name or product.secondary_name
+        or 'Товары'
+    )
+    category_name = category_name.strip()[:120] or 'Товары'
+    property_names = []
+    for name, _ in product.properties:
+        if name not in property_names:
+            property_names.append(name)
+    category, created = StorePriceTagCategory.objects.get_or_create(
+        profile=profile,
+        name=category_name,
+        defaults={
+            'available_property_names': property_names,
+            'property_names': '\n'.join(property_names[:property_limit]),
+        },
+    )
+    if not created:
+        discovered = [
+            *category.available_property_names,
+            *[
+                name for name in property_names
+                if name not in category.available_property_names
+            ],
+        ]
+        if discovered != category.available_property_names:
+            category.available_property_names = discovered
+            category.save(update_fields=(
+                'available_property_names', 'updated_at',
+            ))
+    product.category_rule = category
+    selected_names = category.property_name_list or property_names[:property_limit]
+    select_product_properties(product, selected_names, property_limit)
+    return product
+
+
 def _ordered_category_property_names(category):
     selected = [
         name for name in category.property_name_list
@@ -1728,6 +1767,9 @@ def price_tags(request):
                         import_product(url),
                         list(profile.categories.filter(is_active=True)),
                         property_limit,
+                    )
+                    product = _ensure_product_price_tag_category(
+                        profile, product, property_limit,
                     )
                     product.price_tag_profile = profile
                     corrections = profile.name_corrections.filter(
