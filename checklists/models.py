@@ -73,6 +73,11 @@ class StorePriceTagTemplate(models.Model):
         null=True,
         blank=True,
     )
+    available_property_names = models.JSONField(
+        'найденные свойства',
+        default=list,
+        blank=True,
+    )
     heading = models.CharField(
         'подпись на ценнике',
         max_length=80,

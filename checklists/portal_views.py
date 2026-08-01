@@ -1535,34 +1535,24 @@ def price_tags(request):
     store = request.current_store
     template, _ = StorePriceTagTemplate.objects.get_or_create(store=store)
     categories = list(store.price_tag_categories.all())
+    available_names = template.available_property_names
     links_form = PriceTagLinksForm()
-    template_form = StorePriceTagTemplateForm(instance=template)
-    category_form = StorePriceTagCategoryForm()
+    category_form = StorePriceTagCategoryForm(available_names=available_names)
     products = []
     import_errors = []
     action = request.POST.get('action') if request.method == 'POST' else ''
 
-    if action == 'save_template':
-        if not (is_system_admin(request.user) or is_store_director(request.user)):
-            return HttpResponseForbidden(
-                'Менять профиль ценников может администр или директор.'
-            )
-        template_form = StorePriceTagTemplateForm(
-            request.POST,
-            request.FILES,
-            instance=template,
-        )
-        if template_form.is_valid():
-            template_form.save()
-            messages.success(request, 'Шаблон ценника сохранён.')
-            return redirect('checklists:director_price_tags')
-    elif action == 'save_category':
+    if action == 'save_category':
         category_id = request.POST.get('category_id')
         category = (
             get_object_or_404(StorePriceTagCategory, pk=category_id, store=store)
             if category_id else StorePriceTagCategory(store=store)
         )
-        category_form = StorePriceTagCategoryForm(request.POST, instance=category)
+        category_form = StorePriceTagCategoryForm(
+            request.POST,
+            instance=category,
+            available_names=available_names,
+        )
         if category_form.is_valid():
             category_form.save()
             messages.success(request, 'Правило категории сохранено.')
@@ -1588,6 +1578,20 @@ def price_tags(request):
                     ))
                 except ProductImportError as exc:
                     import_errors.append({'url': url, 'message': str(exc)})
+            discovered = list(dict.fromkeys([
+                *template.available_property_names,
+                *[
+                    name for product in products
+                    for name, _ in product.properties
+                ],
+            ]))
+            if discovered != template.available_property_names:
+                template.available_property_names = discovered
+                template.save(update_fields=('available_property_names', 'updated_at'))
+                available_names = discovered
+            category_form = StorePriceTagCategoryForm(
+                available_names=available_names,
+            )
 
     return render(
         request,
@@ -1601,19 +1605,50 @@ def price_tags(request):
             'store': store,
             'price_tag_template': template,
             'links_form': links_form,
-            'template_form': template_form,
             'category_form': category_form,
             'category_forms': [
-                (category, StorePriceTagCategoryForm(instance=category))
+                (category, StorePriceTagCategoryForm(
+                    instance=category,
+                    available_names=available_names,
+                ))
                 for category in categories
             ],
             'products': products,
+            'product_sheets': [
+                products[index:index + 4]
+                for index in range(0, len(products), 4)
+            ],
             'import_errors': import_errors,
             'can_edit_template': (
                 is_system_admin(request.user) or is_store_director(request.user)
             ),
         },
     )
+
+
+@price_tag_tool_required
+def price_tag_profile(request):
+    if not (is_system_admin(request.user) or is_store_director(request.user)):
+        return HttpResponseForbidden(
+            'Профиль магазина может менять администратор или директор.'
+        )
+    store = request.current_store
+    template, _ = StorePriceTagTemplate.objects.get_or_create(store=store)
+    form = StorePriceTagTemplateForm(
+        request.POST or None,
+        request.FILES or None,
+        instance=template,
+    )
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Профиль магазина для ценников сохранен.')
+        return redirect('checklists:price_tag_profile')
+    return render(request, 'checklists/director/price_tag_profile.html', {
+        'portal': 'director',
+        'store': store,
+        'price_tag_template': template,
+        'form': form,
+    })
 
 
 def _report_range(request, store):

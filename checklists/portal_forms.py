@@ -835,6 +835,23 @@ class StorePriceTagTemplateForm(forms.ModelForm):
 
 
 class StorePriceTagCategoryForm(forms.ModelForm):
+    property_names = forms.MultipleChoiceField(
+        label='Свойства на ценнике',
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text='Отметьте свойства, которые нужно печатать.',
+    )
+
+    def __init__(self, *args, available_names=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        selected = self.instance.property_name_list if self.instance.pk else []
+        names = list(dict.fromkeys([*available_names, *selected]))
+        self.fields['property_names'].choices = [(name, name) for name in names]
+        self.initial['property_names'] = selected
+
+    def clean_property_names(self):
+        return '\n'.join(self.cleaned_data['property_names'])
+
     class Meta:
         model = StorePriceTagCategory
         fields = ('name', 'keywords', 'property_names', 'sort_order', 'is_active')
@@ -843,10 +860,6 @@ class StorePriceTagCategoryForm(forms.ModelForm):
             'keywords': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'газонокосилка, lawn mower',
-            }),
-            'property_names': forms.Textarea(attrs={
-                'class': 'form-control', 'rows': 5,
-                'placeholder': 'Мощность\nШирина скашивания\nВес',
             }),
             'sort_order': forms.NumberInput(attrs={'class': 'form-control'}),
         }

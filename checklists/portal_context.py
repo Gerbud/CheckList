@@ -30,6 +30,7 @@ SECTION_TITLES = {
     'director_task_create': 'Добавить задачу',
     'director_reports': 'Отчёты',
     'director_price_tags': 'Печать ценников',
+    'price_tag_profile': 'Профиль магазина для ценников',
     'director_report_daily': 'Ежедневный отчёт',
     'director_report_employees': 'Отчёт по сотрудникам',
     'director_report_revisions': 'История изменений',

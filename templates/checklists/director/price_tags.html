@@ -3,7 +3,8 @@
 {% block extra_head %}
 <style>
   .price-tag-print-area { --tag-primary: {{ price_tag_template.primary_color }}; --tag-accent: {{ price_tag_template.accent_color }}; }
-  .price-tags-grid { display: grid; grid-template-columns: repeat(2, 105mm); justify-content: center; background: #dbe1e8; padding: 8px; overflow-x: auto; }
+  .price-tag-sheets { display: grid; gap: 16px; justify-content: center; overflow-x: auto; }
+  .price-tag-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: repeat(2, 105mm); grid-template-rows: repeat(2, 148.5mm); background: #fff; box-shadow: 0 .25rem 1rem rgba(15,23,42,.14); }
   .price-tag { width: 105mm; height: 148.5mm; box-sizing: border-box; background: #fff; border: .35mm dashed #94a3b8; padding: 7mm; display: flex; flex-direction: column; overflow: hidden; color: #0f172a; position: relative; }
   .price-tag::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3mm; background: var(--tag-accent); }
   .price-tag-head { min-height: 16mm; display: flex; align-items: center; justify-content: space-between; gap: 4mm; color: var(--tag-primary); }
@@ -30,12 +31,13 @@
     body * { visibility: hidden !important; }
     .price-tag-print-area, .price-tag-print-area * { visibility: visible !important; }
     .price-tag-print-area { position: absolute; inset: 0; width: 210mm; }
-    .price-tags-grid { display: grid; grid-template-columns: repeat(2, 105mm); grid-auto-rows: 148.5mm; width: 210mm; padding: 0; background: #fff; overflow: visible; }
+    .price-tag-sheets { display: block; width: 210mm; padding: 0; overflow: visible; }
+    .price-tag-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: repeat(2, 105mm); grid-template-rows: repeat(2, 148.5mm); box-shadow: none; break-after: page; page-break-after: always; }
+    .price-tag-sheet:last-child { break-after: auto; page-break-after: auto; }
     .price-tag { break-inside: avoid; page-break-inside: avoid; }
-    .price-tag:nth-child(4n) { break-after: page; page-break-after: always; }
   }
   @media (max-width: 900px) {
-    .price-tags-grid { display: flex; flex-direction: column; align-items: center; }
+    .price-tag-sheets { justify-content: start; }
     .price-tag { transform-origin: top center; }
   }
 </style>
@@ -43,7 +45,7 @@
 {% block portal_content %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div><h1 class="h3 mb-1">Печать ценников · {{ store.name }}</h1><p class="text-secondary mb-0">Добавьте ссылки — сайт соберёт товары в готовые ценники 1/4 A4.</p></div>
-  {% if products %}<button class="btn btn-success" type="button" onclick="window.print()">🖨️ Печатать {{ products|length }} ценников</button>{% endif %}
+  <div class="d-flex gap-2">{% if can_edit_template %}<a class="btn btn-outline-primary" href="{% url 'checklists:price_tag_profile' %}">Профиль магазина</a>{% endif %}{% if products %}<button class="btn btn-success" type="button" onclick="window.print()">🖨️ Печатать {{ products|length }} ценников</button>{% endif %}</div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -58,13 +60,6 @@
       <button class="btn btn-primary mt-3" type="submit">Создать ценники</button>
     </form>
   </div>
-  {% if can_edit_template %}<div class="col-12 col-xl-5">
-    <details class="card p-3 h-100"><summary class="h5 mb-0">Профиль ценников магазина</summary>
-      <form method="post" enctype="multipart/form-data" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_template">
-      {% for field in template_form %}<div class="{% if field.field.widget.input_type == 'checkbox' %}col-12 form-check ms-2{% else %}col-12{% endif %}">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}
-      <div class="col-12"><button class="btn btn-outline-primary" type="submit">Сохранить шаблон</button></div></form>
-    </details>
-  </div>{% endif %}
 </div>
 
 <section class="card p-3 mb-4">
@@ -81,7 +76,7 @@
 
 {% if products %}<section class="price-tag-print-area" aria-label="Готовые ценники">
   <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника</span></div>
-  <div class="price-tags-grid">{% for product in products %}
+  <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
     <article class="price-tag">
       <header class="price-tag-head">{% if price_tag_template.logo %}<img class="price-tag-logo" src="{{ price_tag_template.logo.url }}" alt="{{ store.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ store.name }}</div>{% endif %}{% if price_tag_template.heading %}<div class="price-tag-heading">{{ price_tag_template.heading }}</div>{% endif %}</header>
       <div class="price-tag-product {% if not price_tag_template.show_image or not product.image_url %}no-image{% endif %}"><div><div class="price-tag-type">{{ product.secondary_name }}</div><div class="price-tag-name">{{ product.prominent_name }}</div>{% if price_tag_template.show_sku and product.sku %}<div class="price-tag-sku">Артикул: {{ product.sku }}</div>{% endif %}</div>{% if price_tag_template.show_image and product.image_url %}<img class="price-tag-image" src="{{ product.image_url }}" alt="">{% endif %}</div>
@@ -89,7 +84,7 @@
       {% if price_tag_template.show_properties and product.displayed_properties %}<div class="price-tag-properties">{% for name, value in product.displayed_properties %}<div class="price-tag-property"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
       <footer class="price-tag-footer"><span>{{ price_tag_template.footer|default:store.name }}</span><span>{% if product.category_rule %}{{ product.category_rule.name }}{% else %}{{ product.source_name }}{% endif %}</span></footer><div class="price-tag-qr" data-qr-url="{{ product.url }}" aria-label="QR-код товара"></div>
     </article>
-  {% endfor %}</div>
+  {% endfor %}</div>{% endfor %}</div>
 </section>{% endif %}
 {% if products %}<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script><script>
 window.addEventListener('load', function () {

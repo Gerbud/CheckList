@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Профиль магазина для ценников{% endblock %}
+{% block portal_content %}
+<div class="d-flex flex-wrap justify-content-between gap-2 mb-3"><div><h1 class="h3 mb-1">Профиль магазина · {{ store.name }}</h1><p class="text-secondary mb-0">Логотип загружается один раз и используется во всех ценниках.</p></div><a class="btn btn-outline-primary align-self-start" href="{% url 'checklists:director_price_tags' %}">← К ценникам</a></div>
+<form method="post" enctype="multipart/form-data" class="card p-4"><div class="row g-3">{% csrf_token %}{% for field in form %}<div class="{% if field.field.widget.input_type == 'checkbox' %}col-12 form-check ms-2{% else %}col-12 col-lg-6{% endif %}">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<div class="col-12"><button class="btn btn-primary">Сохранить профиль</button></div></div></form>
+{% endblock %}

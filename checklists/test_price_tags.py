@@ -7,7 +7,12 @@ from checklists.models import (
     StorePriceTagCategory,
     StorePriceTagTemplate,
 )
-from checklists.price_tags import ImportedProduct, apply_category_rules, import_product
+from checklists.price_tags import (
+    ImportedProduct,
+    apply_category_rules,
+    clean_product_name,
+    import_product,
+)
 from checklists.test_portals import create_access_user
 
 
@@ -117,9 +122,8 @@ def test_director_can_generate_and_edit_store_profile(
     assert 'На листе A4 будет 4 ценника' in content
     assert 'data-qr-url="https://example.test/product/1/"' in content
     saved = client.post(
-        reverse('checklists:director_price_tags'),
+        reverse('checklists:price_tag_profile'),
         {
-            'action': 'save_template',
             'heading': 'Акция',
             'primary_color': '#112233',
             'accent_color': '#ff6600',
@@ -140,9 +144,8 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
     )
 
     response = client.post(
-        reverse('checklists:director_price_tags'),
+        reverse('checklists:price_tag_profile'),
         {
-            'action': 'save_template',
             'heading': 'Лучшая цена',
             'primary_color': '#112233',
             'accent_color': '#ff6600',
@@ -161,6 +164,10 @@ def test_admin_can_save_separate_store_template(client, price_tag_setup):
 
 
 def test_terminal_account_can_open_tool_and_manage_category(client, price_tag_setup):
+    StorePriceTagTemplate.objects.create(
+        store=price_tag_setup['store'],
+        available_property_names=['Мощность', 'Ширина скашивания'],
+    )
     client.force_login(price_tag_setup['terminal'])
     response = client.get(reverse('checklists:director_price_tags'))
     assert response.status_code == 200
@@ -172,7 +179,7 @@ def test_terminal_account_can_open_tool_and_manage_category(client, price_tag_se
             'action': 'save_category',
             'name': 'Газонокосилки',
             'keywords': 'газонокосилка, lawn mower',
-            'property_names': 'Мощность\nШирина скашивания',
+            'property_names': ['Мощность', 'Ширина скашивания'],
             'sort_order': 1,
             'is_active': 'on',
         },
@@ -211,3 +218,44 @@ def test_category_rule_selects_and_orders_properties(price_tag_setup):
         ('Мощность', '2.2 кВт'),
         ('Вес', '68 кг'),
     ]
+
+
+def test_seo_product_name_is_cleaned_without_losing_variant():
+    value = (
+        'Купить бокс на крышу Element 590 белый карбон '
+        '(скоба), Белый матовый 216x85x46 —купить в Москве'
+    )
+
+    assert clean_product_name(value) == (
+        'Бокс на крышу Element 590 белый карбон '
+        '(скоба), Белый матовый'
+    )
+
+
+def test_four_price_tags_are_grouped_on_one_a4_sheet(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(url=url, name='Товар', price='1000'),
+    )
+    client.force_login(price_tag_setup['director'])
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {
+            'action': 'generate',
+            'urls': '\n'.join(
+                f'https://example.test/product/{index}/'
+                for index in range(1, 5)
+            ),
+        },
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert content.count('class="price-tag-sheet"') == 1
+    assert content.count('class="price-tag"') == 4
+    assert 'grid-template-columns: repeat(2, 105mm)' in content
+    assert 'grid-template-rows: repeat(2, 148.5mm)' in content

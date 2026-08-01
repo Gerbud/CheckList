@@ -275,11 +275,26 @@ def _product_identity(product, name, properties, meta):
         before, after = re.split(re.escape(brand), name, maxsplit=1, flags=re.I)
         product_type = before.strip(' ,—-')
         if not model:
-            model = re.split(r'[,;|()]', after, maxsplit=1)[0].strip(' ,—-')
-            model = ' '.join(model.split()[:5])
+            model = after.strip(' ,—-')[:100]
     if not product_type and category:
         product_type = category.split('>')[-1].strip()
     return brand, model, product_type, category
+
+
+def clean_product_name(value):
+    value = re.sub(r'\s+', ' ', str(value)).strip()
+    value = re.sub(r'^Купить\s+', '', value, flags=re.I)
+    value = re.split(r'\s+[—-]\s*купить\b', value, maxsplit=1, flags=re.I)[0]
+    value = re.split(r'\s+в магазине\s+', value, maxsplit=1, flags=re.I)[0]
+    value = re.sub(
+        r'\s+\d{2,4}(?:[.,]\d+)?\s*[xх×*]\s*\d{2,4}(?:[.,]\d+)?'
+        r'(?:\s*[xх×*]\s*\d{2,4}(?:[.,]\d+)?)?\s*$',
+        '',
+        value,
+        flags=re.I,
+    )
+    value = value.strip(' ,—-')
+    return value[:1].upper() + value[1:] if value else value
 
 
 def apply_category_rules(product, categories, max_properties=5):
@@ -337,7 +352,7 @@ def import_product(url):
         or meta.get('twitter:title') or ''.join(parser.h1_parts).strip()
         or ''.join(parser.title_parts).strip()
     )
-    name = re.sub(r'\s+', ' ', str(name)).strip()
+    name = clean_product_name(name)
     if not name:
         raise ProductImportError('На странице не найдено название товара.')
     price = (
