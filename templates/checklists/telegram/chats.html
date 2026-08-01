@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Telegram-чаты{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<div class="row g-3">
+<div class="col-lg-5"><section class="card p-3"><h1 class="h4">Добавить чат или Topic</h1><form method="post">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}">{{ form.as_p }}<button class="btn btn-primary">Добавить</button></form></section></div>
+<div class="col-lg-7"><section class="card p-3"><h2 class="h4">Подключённые чаты</h2>
+{% for chat in chats %}<article class="border-top py-3"><div class="fw-semibold">{{ chat.title }}</div><div class="small text-secondary">{{ chat.chat_id }}{% if chat.message_thread_id %} · Topic {{ chat.message_thread_id }}{% endif %} · {{ chat.get_purpose_display }} · {{ chat.is_active|yesno:"активен,отключён" }}</div><div class="d-flex flex-wrap gap-2 mt-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'checklists:telegram_chat_edit' chat.pk %}">Изменить</a><form method="post" action="{% url 'checklists:telegram_chat_action' chat.pk 'test' %}">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}"><button class="btn btn-sm btn-outline-success">Тест</button></form><form method="post" action="{% url 'checklists:telegram_chat_action' chat.pk 'get-chat' %}">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}"><button class="btn btn-sm btn-outline-secondary">getChat</button></form><form method="post" action="{% url 'checklists:telegram_chat_action' chat.pk 'delete' %}">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}"><button class="btn btn-sm btn-outline-danger">Удалить</button></form></div></article>{% empty %}<p class="text-secondary">Чаты ещё не добавлены.</p>{% endfor %}
+</section></div></div>
+{% endblock %}

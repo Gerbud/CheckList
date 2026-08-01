@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Пользователи{% endblock %}
+{% block portal_content %}
+<div class="d-flex justify-content-between mb-3">
+    <h1 class="h3">Пользователи</h1>
+    <a class="btn btn-primary" href="{% url 'checklists:system_user_add' %}">Добавить</a>
+</div>
+<form method="get" class="card p-3 mb-3">
+    <div class="row g-2">
+        <div class="col">
+            <select class="form-select" name="role">
+                <option value="">Все роли</option>
+                {% for value,label in roles %}
+                <option value="{{ value }}" {% if selected_role == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col">
+            <select class="form-select" name="store">
+                <option value="">Все магазины</option>
+                {% for item in stores %}
+                <option value="{{ item.pk }}" {% if selected_store == item.pk|stringformat:'s' %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto"><button class="btn btn-primary">Фильтр</button></div>
+    </div>
+</form>
+<div class="card table-responsive">
+    <table class="table mb-0">
+        <thead><tr><th>Логин</th><th>Роль</th><th>Магазин</th><th>Статус</th><th></th></tr></thead>
+        <tbody>
+        {% for user in page %}
+        <tr>
+            <td>{{ user.username }}</td>
+            <td>{% if user.is_superuser %}Главный администратор{% elif user.employee_profile.role == 'store_account' %}Сотрудник{% elif user.employee_profile %}{{ user.employee_profile.get_role_display }}{% else %}Пользователь{% endif %}</td>
+            <td>{{ user.employee_profile.store.name|default:"—" }}</td>
+            <td>{{ user.is_active|yesno:"Активен,Неактивен" }}</td>
+            <td><a href="{% url 'checklists:system_user_detail' user.pk %}">Открыть</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Пользователи не найдены.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "checklists/pagination.html" with page=page querystring=querystring %}
+{% endblock %}

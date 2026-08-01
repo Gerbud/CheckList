@@ -1,0 +1,32 @@
+<nav class="portal-nav">
+{% if portal_is_system_admin %}
+    <div class="small text-uppercase text-secondary px-2 py-1">Система</div>
+    <a href="{{ portal_home_url }}">Главная</a>
+    <a href="{% url 'checklists:system_stores' %}">Магазины</a>
+    <a href="{% url 'checklists:system_users' %}">Пользователи</a>
+    <a href="{% url 'checklists:system_audit' %}">Журнал действий</a>
+    <a href="{% url 'checklists:system_reports' %}">Сводка магазинов</a>
+    <a href="{% url 'checklists:system_tasks' %}">Все задачи</a>
+    {% if managed_store %}
+    <div class="small text-uppercase text-secondary px-2 pt-3 pb-1">Выбранный магазин</div>
+    <div class="small px-2 pb-1">{{ managed_store.name }} · {{ managed_store.code }}</div>
+    <a href="{{ managed_store_home_url }}">Обзор</a>
+    <a href="{% url 'checklists:director_employees' %}">Сотрудники</a>
+    <a href="{% url 'checklists:director_shifts' %}">Смены</a>
+    <a href="{% url 'checklists:director_questions' %}">Вопросы</a>
+    <a href="{% url 'checklists:director_schedule' %}">Расписание</a>
+    <a href="{% url 'checklists:director_tasks' %}">Задачи</a>
+    <a href="{% url 'checklists:director_reports' %}">Отчёты</a>
+    <a href="{% url 'checklists:telegram_settings' %}">Telegram</a>
+    {% endif %}
+{% else %}
+    <a href="{{ portal_home_url }}">Главная</a>
+    <a href="{% url 'checklists:director_employees' %}">Сотрудники</a>
+    <a href="{% url 'checklists:director_shifts' %}">Смены</a>
+    <a href="{% url 'checklists:director_questions' %}">Вопросы</a>
+    <a href="{% url 'checklists:director_schedule' %}">Расписание</a>
+    <a href="{% url 'checklists:director_tasks' %}">Задачи</a>
+    <a href="{% url 'checklists:director_reports' %}">Отчёты</a>
+    <a href="{% url 'checklists:telegram_settings' %}">Telegram</a>
+{% endif %}
+</nav>

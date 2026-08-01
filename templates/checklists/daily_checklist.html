@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Чек-лист на сегодня{% endblock %}
+
+{% block content %}
+{% if service_error %}
+    <div class="alert alert-danger" role="alert">
+        <h1 class="h4">Не удалось открыть чек-лист</h1>
+        <p class="mb-0">{{ service_error }}</p>
+    </div>
+{% elif daily %}
+    <header class="mb-4">
+        <a href="{% url 'checklists:dashboard' %}" class="link-secondary text-decoration-none">← На главную</a>
+        <div class="d-flex justify-content-between align-items-start gap-3 mt-3">
+            <div>
+                <h1 class="h3 mb-1">{{ stage_context.stage.get_section_code_display }}</h1>
+                <p class="mb-1">Чек-лист на {{ daily.checklist_date|date:"d.m.Y" }} · {{ daily.get_day_status_display }}</p>
+                <p class="text-secondary mb-0">{{ profile.store.name }}</p>
+            </div>
+            <span class="badge {% if stage_context.is_overdue %}text-bg-danger{% elif stage_context.is_completed %}text-bg-success{% else %}text-bg-primary{% endif %}">{{ stage_context.state_label }}</span>
+        </div>
+    </header>
+
+    {% if selected_employee %}
+    <div class="alert alert-info d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+        <strong>Сейчас заполняет: {{ selected_employee.display_name }}</strong>
+        <form method="post" action="{% url 'checklists:change_employee' %}" class="m-0">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button class="btn btn-outline-primary" type="submit">Сменить сотрудника</button>
+        </form>
+    </div>
+    {% elif stage_context.stage.completed_by_employee %}
+    <div class="alert alert-success mb-3">
+        Завершил этап: <strong>{{ stage_context.stage.completed_by_employee.display_name }}</strong>
+    </div>
+    {% endif %}
+
+    <div class="alert {% if stage_context.is_overdue %}alert-danger{% elif stage_context.is_completed %}alert-success{% elif stage_context.is_soon %}alert-warning{% else %}alert-primary{% endif %}">
+        <div class="d-flex justify-content-between align-items-center gap-3">
+            <div>
+                <strong>{% if stage_context.is_completed %}Этап завершён{% elif stage_context.is_overdue %}Этап просрочен{% elif stage_context.can_complete %}Этап доступен для завершения{% else %}Можно заполнить заранее{% endif %}</strong>
+                <div class="small">{{ stage_context.opens_time }}–{{ stage_context.deadline_time }}</div>
+                {% if not stage_context.is_completed and not stage_context.can_complete %}
+                <div class="small">
+                    Этап доступен для просмотра и заполнения.
+                    Завершить его можно после
+                    {{ stage_context.completion_available_time }}.
+                </div>
+                {% elif stage_context.can_complete and not stage_context.is_overdue and not stage_context.is_completed %}
+                <div class="small">
+                    Этап можно завершить до
+                    {{ stage_context.deadline_time }}.
+                </div>
+                {% endif %}
+            </div>
+            <span class="fs-5 fw-bold deadline-timer" data-server-now="{{ server_now }}" data-opens-at="{{ stage_context.stage.opens_at|date:'c' }}" data-completion-available-at="{{ stage_context.stage.completion_available_at|date:'c' }}" data-deadline-at="{{ stage_context.stage.deadline_at|date:'c' }}" data-warning-at="{{ stage_context.warning_at|date:'c' }}" data-state="{{ stage_context.state }}" data-completion-button-id="complete-stage-button">
+                {% if stage_context.is_completed %}Завершён{% elif stage_context.is_overdue %}Срок истёк{% elif stage_context.is_locked %}Начало в {{ stage_context.opens_time }}{% elif stage_context.can_complete %}До {{ stage_context.deadline_time }}{% else %}С {{ stage_context.completion_available_time }}{% endif %}
+            </span>
+        </div>
+    </div>
+
+    {% if stage_context.is_completed %}
+        <div class="card p-3 mb-4">
+            <div class="row text-center g-2">
+                <div class="col-4"><div class="summary-value text-success">{{ summary.completed }}</div><small>Выполнено</small></div>
+                <div class="col-4"><div class="summary-value text-danger">{{ summary.failed }}</div><small>Не выполнено</small></div>
+                <div class="col-4"><div class="summary-value text-secondary">{{ summary.not_applicable }}</div><small>Не применимо</small></div>
+            </div>
+        </div>
+        {% include "checklists/_answer_sections.html" with editable=False %}
+    {% else %}
+        <form method="post" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="section_code" value="{{ stage_context.stage.section_code }}">
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+            {% include "checklists/_answer_sections.html" with editable=True %}
+            <div class="mobile-action-bar">
+                <div class="row g-2 app-shell">
+                    <div class="col-5">
+                        <button class="btn btn-outline-primary btn-lg w-100" type="submit" name="action" value="save">Сохранить ответы</button>
+                    </div>
+                    <div class="col-7">
+                        <button id="complete-stage-button" class="btn btn-success btn-lg w-100" type="submit" name="action" value="complete_stage" {% if not stage_context.can_complete %}disabled aria-disabled="true"{% endif %}>Завершить этап</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}<script src="{% static 'checklists/deadline_timer.js' %}"></script>{% endblock %}

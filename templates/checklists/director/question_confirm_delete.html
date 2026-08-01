@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Удаление вопроса{% endblock %}
+{% block portal_content %}
+<h1 class="h3">Удаление вопроса</h1>
+<section class="card p-3 mb-3"><h2 class="h5">{{ question.text }}</h2>{% if question.description %}<p>{{ question.description }}</p>{% endif %}<dl class="row mb-0"><dt class="col-sm-4">Этап</dt><dd class="col-sm-8">{{ question.section.name }}</dd><dt class="col-sm-4">Активность</dt><dd class="col-sm-8">{{ question.is_active|yesno:"Активен,Неактивен" }}</dd><dt class="col-sm-4">Историческое использование</dt><dd class="col-sm-8">{{ history.is_used|yesno:"Есть,Нет" }}</dd></dl></section>
+{% if history.is_used %}<div class="alert alert-warning">Вопрос использовался в чек-листах и не может быть физически удалён. Он будет исключён из новых чек-листов, а история сохранится.</div>{% else %}<div class="alert alert-danger">Вопрос будет удалён без возможности восстановления.</div>{% endif %}
+<div class="d-flex flex-wrap gap-2"><form method="post">{% csrf_token %}<button class="btn btn-danger">Удалить вопрос</button></form><a class="btn btn-outline-secondary" href="{% url 'checklists:director_questions' %}">Отмена</a></div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ managed_user.username }}{% endblock %}
+{% block portal_content %}
+<h1 class="h3">{{ managed_user.username }}</h1>
+<div class="card p-3">
+    <div>Имя: {{ managed_user.get_full_name|default:"—" }}</div>
+    <div>Email: {{ managed_user.email|default:"—" }}</div>
+    <div>Роль: {% if managed_user.is_superuser %}Главный администратор{% elif managed_user.employee_profile.role == 'store_account' %}Сотрудник{% elif managed_user.employee_profile %}{{ managed_user.employee_profile.get_role_display }}{% else %}Пользователь{% endif %}</div>
+    <div>Магазин: {{ managed_user.employee_profile.store.name|default:"—" }}</div>
+    <div>Активен: {{ managed_user.is_active|yesno:"Да,Нет" }}</div>
+    <hr>
+    <h2 class="h5">Telegram</h2>
+    {% if managed_user.telegram_profile %}
+    <div>Статус: <strong>Подключен</strong></div>
+    <div>Username: @{{ managed_user.telegram_profile.telegram_username|default:"—" }}</div>
+    <div>Chat ID: {{ managed_user.telegram_profile.telegram_chat_id }}</div>
+    {% else %}
+    <div>Статус: <strong>Не подключен</strong></div>
+    {% endif %}
+    <h2 class="h5 mt-3">Привязанные магазины</h2>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Магазин</th><th>Роль</th><th>Статус</th><th></th></tr></thead>
+            <tbody>
+            {% for membership in memberships %}
+            <tr>
+                <td>{{ membership.store.name }}</td>
+                <td>{{ membership.get_role_in_store_display }}</td>
+                <td>{{ membership.is_active|yesno:"Активна,Отключена" }}</td>
+                <td>
+                    <form method="post" action="{% url 'checklists:system_user_membership_remove' managed_user.pk membership.pk %}">
+                        {% csrf_token %}
+                        <button class="btn btn-sm btn-outline-danger">Удалить связь</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4">Связей с магазинами нет.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <form method="post" action="{% url 'checklists:system_user_membership_add' managed_user.pk %}" class="row g-2 align-items-end">
+        {% csrf_token %}
+        <div class="col-md-4"><label class="form-label">{{ membership_form.store.label }}</label>{{ membership_form.store }}</div>
+        <div class="col-md-3"><label class="form-label">{{ membership_form.role_in_store.label }}</label>{{ membership_form.role_in_store }}</div>
+        <div class="col-md-2 form-check mb-2">{{ membership_form.is_active }} <label class="form-check-label">{{ membership_form.is_active.label }}</label></div>
+        <div class="col-md-3"><button class="btn btn-outline-primary w-100">Добавить магазин</button></div>
+    </form>
+    {% if not protected_user and managed_user.employee_profile %}
+    <div class="mt-3">
+        <a class="btn btn-primary" href="{% url 'checklists:system_user_edit' managed_user.pk %}">Изменить</a>
+        <a class="btn btn-outline-primary" href="{% url 'checklists:system_user_reset_password' managed_user.pk %}">Сбросить пароль</a>
+    </div>
+    <form method="post" action="{% if managed_user.is_active %}{% url 'checklists:system_user_deactivate' managed_user.pk %}{% else %}{% url 'checklists:system_user_activate' managed_user.pk %}{% endif %}" class="mt-3">
+        {% csrf_token %}
+        <button class="btn btn-outline-danger">{% if managed_user.is_active %}Деактивировать{% else %}Активировать{% endif %}</button>
+    </form>
+    {% endif %}
+    {% if not protected_user %}
+    <a class="btn btn-danger mt-3" href="{% url 'checklists:system_user_delete' managed_user.pk %}">Удалить пользователя</a>
+    {% endif %}
+</div>
+{% endblock %}

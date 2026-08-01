@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Выбор сотрудника{% endblock %}
+
+{% block content %}
+<header class="mb-4">
+    <a href="{% url 'checklists:dashboard' %}" class="link-secondary text-decoration-none">← На главную</a>
+    <h1 class="h3 mt-3 mb-1">Кто сейчас заполняет чек-лист?</h1>
+    <p class="text-secondary mb-0">{{ profile.store.name }}</p>
+</header>
+
+{% if employees %}
+<div class="row g-3">
+    {% for item in employees %}
+    <div class="col-12 col-sm-6">
+        <form method="post" class="h-100">
+            {% csrf_token %}
+            <input type="hidden" name="employee_id" value="{{ item.employee.pk }}">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <button type="submit" class="card btn btn-light text-start w-100 h-100 p-4 border {% if item.is_assigned %}border-primary{% endif %}">
+                <span class="fs-4 fw-semibold">{{ item.employee.display_name }}</span>
+                {% if item.employee.personnel_number %}<span class="text-secondary">№ {{ item.employee.personnel_number }}</span>{% endif %}
+                <span class="badge mt-2 align-self-start {% if item.is_assigned %}text-bg-primary{% else %}text-bg-secondary{% endif %}">
+                    {% if item.is_assigned %}Назначен на смену{% else %}Не назначен на смену{% endif %}
+                </span>
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-warning">Нет активных сотрудников для выбора.</div>
+{% endif %}
+{% endblock %}

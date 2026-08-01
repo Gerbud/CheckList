@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Привязки Telegram{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<section class="card p-3 mb-3">
+    <h1 class="h3">Telegram-пользователи</h1>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Пользователь</th><th>Telegram username</th><th>Chat ID</th><th>Привязанные магазины</th><th>Действия</th></tr></thead>
+            <tbody>
+            {% for profile in telegram_profiles %}
+            <tr>
+                <td><a href="{% url 'checklists:system_user_detail' profile.user_id %}">{{ profile.user.get_username }}</a></td>
+                <td>@{{ profile.telegram_username|default:"—" }}</td>
+                <td>{{ profile.telegram_chat_id }}</td>
+                <td>
+                    {% for membership in profile.user.store_memberships.all %}
+                    <div>{{ membership.store.name }} · {{ membership.get_role_in_store_display }}{% if not membership.is_active %} · отключена{% endif %}</div>
+                    {% empty %}—{% endfor %}
+                </td>
+                <td>
+                    <form method="post" action="{% url 'checklists:telegram_profile_action' profile.pk 'reassign' %}" class="d-flex gap-1 mb-2">
+                        {% csrf_token %}{{ profile_user_form.user }}
+                        <button class="btn btn-sm btn-outline-primary">Изменить пользователя</button>
+                    </form>
+                    <form method="post" action="{% url 'checklists:telegram_profile_action' profile.pk 'disconnect' %}">
+                        {% csrf_token %}
+                        <button class="btn btn-sm btn-outline-danger">Отвязать</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">Подключённых Telegram-пользователей нет.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<section class="card p-3 mb-3"><h1 class="h3">Ожидают подтверждения</h1>{% for item in pending_bindings %}<article class="border-top py-3"><div><strong>ID {{ item.telegram_user_id }}</strong> · @{{ item.username|default:"—" }} · код {{ item.one_time_code }} · до {{ item.expires_at|date:"d.m.Y H:i" }}</div><form method="post" action="{% url 'checklists:telegram_binding_action' item.pk 'approve' %}" class="row g-2 mt-1">{% csrf_token %}<div class="col-sm-5">{{ approval_form.store }}</div><div class="col-sm-5">{{ approval_form.user }}</div><div class="col-sm-2"><button class="btn btn-primary w-100">Подтвердить</button></div></form><form method="post" action="{% url 'checklists:telegram_binding_action' item.pk 'reject' %}" class="mt-2">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Отклонить</button></form></article>{% empty %}<p class="text-secondary">Новых заявок нет.</p>{% endfor %}</section>
+<section class="card p-3"><h2 class="h4">Привязки</h2>{% for item in bindings %}<article class="border-top py-3"><div>{{ item.store.name }} · ID {{ item.telegram_user_id }} · @{{ item.username|default:"—" }} · пользователь {{ item.user.username|default:"не связан" }} · {{ item.is_active|yesno:"активна,отключена" }}</div><div class="d-flex flex-wrap gap-2 mt-2">{% if item.is_active %}<form method="post" action="{% url 'checklists:telegram_binding_action' item.pk 'disable' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Отключить</button></form>{% endif %}<form method="post" action="{% url 'checklists:telegram_binding_action' item.pk 'transfer' %}" class="d-flex gap-2">{% csrf_token %}{{ approval_form.store }}{{ approval_form.user }}<button class="btn btn-sm btn-outline-primary">Перенести</button></form></div></article>{% empty %}<p class="text-secondary">Привязок нет.</p>{% endfor %}</section>
+{% endblock %}

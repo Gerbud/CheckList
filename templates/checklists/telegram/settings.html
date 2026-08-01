@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Настройки Telegram{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<h1 class="h3">Telegram</h1>
+{% if store %}
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-secondary">Чаты</div><div class="summary-value">{{ chat_count }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-secondary">Привязки</div><div class="summary-value">{{ binding_count }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-secondary">В очереди</div><div class="summary-value">{{ queue_stats.pending|default:0 }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="card p-3"><div class="small text-secondary">Ошибки</div><div class="summary-value">{{ queue_stats.failed|default:0 }}</div></div></div>
+</div>
+<section class="card p-3 mb-3">
+    <h2 class="h5">Проверка магазина «{{ store.name }}»</h2>
+    <form method="post">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}"><input type="hidden" name="action" value="test"><button class="btn btn-primary">Поставить тестовое сообщение в очередь</button></form>
+</section>
+{% else %}<div class="alert alert-warning">Нет доступных магазинов.</div>{% endif %}
+{% if telegram_is_system_admin %}
+<section class="card p-3 mb-3">
+    <h2 class="h5">Системный бот</h2>
+    <p>Токен: <code>{{ config.masked_token }}</code>. Полный токен после сохранения не отображается.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="system_settings">{{ system_form.as_p }}<button class="btn btn-primary">Сохранить системные настройки</button></form>
+    <form method="post" class="mt-3">{% csrf_token %}<input type="hidden" name="action" value="get_me"><button class="btn btn-outline-secondary">Проверить getMe</button></form>
+</section>
+{% endif %}
+{% if telegram_is_system_admin %}
+<section class="card p-3 mb-3">
+<h2 class="h5">Меню команд бота</h2>
+<dl class="row small">
+<dt class="col-sm-4">Последняя регистрация</dt><dd class="col-sm-8">{{ config.bot_commands_registered_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+<dt class="col-sm-4">Последняя проверка</dt><dd class="col-sm-8">{{ config.bot_commands_last_checked_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+<dt class="col-sm-4">Последняя ошибка</dt><dd class="col-sm-8">{{ config.bot_commands_last_error|default:"—" }}</dd>
+</dl>
+<div class="d-flex flex-wrap gap-2">
+<form method="post">{% csrf_token %}<button class="btn btn-primary" name="action" value="commands_register">Зарегистрировать команды</button></form>
+<form method="post">{% csrf_token %}<button class="btn btn-outline-primary" name="action" value="commands_check">Проверить команды</button></form>
+</div>
+</section>
+{% endif %}
+<section class="card p-3">
+<h2 class="h5">Входящие сообщения</h2>
+<div class="row g-2 mb-3">
+<div class="col-6 col-lg-3"><div class="bg-light rounded p-2"><small>Режим</small><br><strong>{{ config.get_incoming_mode_display }}</strong></div></div>
+<div class="col-6 col-lg-3"><div class="bg-light rounded p-2"><small>Webhook</small><br><strong>{{ config.webhook_is_enabled|yesno:"зарегистрирован,не зарегистрирован" }}</strong></div></div>
+<div class="col-6 col-lg-3"><div class="bg-light rounded p-2"><small>Pending inbound</small><br><strong>{{ inbound_stats.pending }}</strong></div></div>
+<div class="col-6 col-lg-3"><div class="bg-light rounded p-2"><small>Failed inbound</small><br><strong>{{ inbound_stats.failed }}</strong></div></div>
+</div>
+<dl class="row small"><dt class="col-sm-3">URL</dt><dd class="col-sm-9"><code>{{ config.webhook_url|default:"будет сформирован из SITE_URL" }}</code></dd><dt class="col-sm-3">Secret</dt><dd class="col-sm-9">{{ config.masked_webhook_secret }}</dd><dt class="col-sm-3">Последняя проверка</dt><dd class="col-sm-9">{{ config.webhook_last_checked_at|date:"d.m.Y H:i"|default:"—" }}</dd><dt class="col-sm-3">Последняя ошибка</dt><dd class="col-sm-9">{{ config.webhook_last_error|default:"—" }}</dd><dt class="col-sm-3">Updates за 24 часа</dt><dd class="col-sm-9">{{ inbound_stats.updates_24h }}</dd><dt class="col-sm-3">Среднее время</dt><dd class="col-sm-9">{{ inbound_stats.average_duration|default:"—" }}</dd><dt class="col-sm-3">Последняя команда</dt><dd class="col-sm-9">{{ inbound_stats.last_received.command|default:"—" }}</dd></dl>
+{% if telegram_is_system_admin %}
+<div class="d-flex flex-wrap gap-2">
+<form method="post">{% csrf_token %}<button class="btn btn-primary" name="action" value="webhook_register">Зарегистрировать webhook</button></form>
+<form method="post">{% csrf_token %}<button class="btn btn-outline-primary" name="action" value="webhook_check">Проверить webhook</button></form>
+<form method="post">{% csrf_token %}<button class="btn btn-outline-danger" name="action" value="webhook_delete">Удалить webhook</button></form>
+<form method="post">{% csrf_token %}<button class="btn btn-outline-secondary" name="action" value="webhook_polling">Переключить на polling</button></form>
+<form method="post">{% csrf_token %}<button class="btn btn-outline-warning" name="action" value="inbound_retry_failed">Повторить failed jobs</button></form>
+</div>
+{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Шаблоны Telegram{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-1">Шаблоны сообщений</h1>
+        <p class="text-secondary mb-0">Пользовательские настройки событий магазина.</p>
+    </div>
+    {% if can_create_template %}
+        <a class="btn btn-primary" href="{% url 'checklists:telegram_template_create' %}">＋ Добавить шаблон</a>
+    {% endif %}
+</div>
+
+<section class="card p-3 mb-3">
+    <form method="get" class="row g-2" role="search">
+        <div class="col-12 col-lg-4">
+            <label class="form-label small" for="template-search">Поиск</label>
+            <input class="form-control" id="template-search" name="q" value="{{ filters.q }}" placeholder="Название, код или текст">
+        </div>
+        <div class="col-6 col-lg-2">
+            <label class="form-label small" for="category-filter">Категория</label>
+            <select class="form-select" id="category-filter" name="category">
+                <option value="">Все</option>
+                {% for value,label in category_choices %}<option value="{{ value }}" {% if filters.category == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-6 col-lg-2">
+            <label class="form-label small" for="event-filter">Событие</label>
+            <select class="form-select" id="event-filter" name="event">
+                <option value="">Все</option>
+                {% for value,label in event_choices %}<option value="{{ value }}" {% if filters.event == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-6 col-lg-2">
+            <label class="form-label small" for="status-filter">Статус</label>
+            <select class="form-select" id="status-filter" name="status">
+                <option value="">Все</option>
+                <option value="enabled" {% if filters.status == 'enabled' %}selected{% endif %}>Включён</option>
+                <option value="disabled" {% if filters.status == 'disabled' %}selected{% endif %}>Выключен</option>
+            </select>
+        </div>
+        <div class="col-6 col-lg-2">
+            <label class="form-label small" for="destination-filter">Получатель</label>
+            <select class="form-select" id="destination-filter" name="destination">
+                <option value="">Все</option>
+                <option value="group" {% if filters.destination == 'group' %}selected{% endif %}>Группы</option>
+                <option value="private" {% if filters.destination == 'private' %}selected{% endif %}>Личные</option>
+                <option value="both" {% if filters.destination == 'both' %}selected{% endif %}>Лично и в группы</option>
+                <option value="none" {% if filters.destination == 'none' %}selected{% endif %}>Не выбран</option>
+            </select>
+        </div>
+        <div class="col-12 d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-primary">Применить</button>
+            <a class="btn btn-outline-secondary" href="{% url 'checklists:telegram_templates' %}">Сбросить фильтры</a>
+        </div>
+    </form>
+</section>
+
+{% for group in template_groups %}
+<section class="mb-4">
+    <h2 class="h5 mb-2">{{ group.title }}</h2>
+    <div class="row g-3">
+        {% for item in group.templates %}
+        <div class="col-12 col-xl-6">
+            <article class="card p-3 h-100">
+                <div class="d-flex justify-content-between gap-3">
+                    <div>
+                        <div class="small text-secondary">{{ item.event_code }}</div>
+                        <h3 class="h5 mb-1">{{ item.name }}</h3>
+                        <p class="small text-secondary mb-2">{{ item.telegram_event.description }}</p>
+                    </div>
+                    {% if item.is_enabled %}<span class="badge text-bg-success align-self-start">Включён</span>{% else %}<span class="badge text-bg-secondary align-self-start">Выключен</span>{% endif %}
+                </div>
+                <div class="small mb-3">
+                    {{ item.get_parse_mode_display }}
+                    · {% if item.send_to_group %}группы{% endif %}{% if item.send_to_group and item.send_to_private %}, {% endif %}{% if item.send_to_private %}личные чаты{% endif %}{% if not item.send_to_group and not item.send_to_private %}<span class="text-danger">получатели не выбраны</span>{% endif %}
+                    · изменён {{ item.updated_at|date:"d.m.Y H:i" }}
+                    {% if item.updated_by %}· {{ item.updated_by.get_full_name|default:item.updated_by.username }}{% endif %}
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-auto">
+                    <a class="btn btn-sm btn-primary" href="{% url 'checklists:telegram_template_edit' item.pk %}">Изменить</a>
+                    <a class="btn btn-sm btn-outline-primary" href="{% url 'checklists:telegram_template_edit' item.pk %}#telegram-preview">Предпросмотр</a>
+                    <a class="btn btn-sm btn-outline-success" href="{% url 'checklists:telegram_template_edit' item.pk %}#test-destinations">Тест</a>
+                    <form method="post" action="{% url 'checklists:telegram_template_toggle' item.pk %}">
+                        {% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}">
+                        <button class="btn btn-sm btn-outline-secondary">{% if item.is_enabled %}Выключить{% else %}Включить{% endif %}</button>
+                    </form>
+                    <a class="btn btn-sm btn-outline-danger" href="{% url 'checklists:telegram_template_delete' item.pk %}">Удалить</a>
+                </div>
+            </article>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% empty %}
+<section class="card p-4 text-center">
+    <div class="display-6" aria-hidden="true">✎</div>
+    <h2 class="h5">Шаблоны не найдены</h2>
+    <p class="text-secondary">Измените фильтры или создайте пользовательский шаблон события. Для отсутствующих настроек используются безопасные стандартные тексты.</p>
+    {% if can_create_template %}<div><a class="btn btn-primary" href="{% url 'checklists:telegram_template_create' %}">Создать первый шаблон</a></div>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}

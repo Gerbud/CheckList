@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Повторяющиеся проблемы{% endblock %}
+{% block portal_content %}
+<div class="d-flex justify-content-between flex-wrap"><div><h1 class="h3 mb-1">Повторяющиеся проблемы</h1><p class="text-secondary">{{ store.name }} · {{ period.label }}</p></div><a class="btn btn-outline-success align-self-start" href="?{{ querystring }}{% if querystring %}&{% endif %}format=csv">CSV для Excel</a></div>
+{% include "checklists/director/_report_period_filter.html" %}
+<div class="card table-responsive mb-3"><table class="table mb-0"><thead><tr><th>Проблема</th><th>Тип</th><th>Повторов</th><th>Последняя дата</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.problem }}</td><td>{{ row.category }}</td><td><strong>{{ row.count }}</strong></td><td>{{ row.last_date|date:"d.m.Y"|default:"—" }}</td></tr>{% empty %}<tr><td colspan="4">Повторяющихся проблем не обнаружено.</td></tr>{% endfor %}</tbody></table></div>
+<section class="card p-3"><h2 class="h5">Проблемы по дням недели</h2><ul class="mb-0">{% for day,count in weekdays %}<li>{{ day }} — {{ count }}</li>{% empty %}<li>Данных нет.</li>{% endfor %}</ul></section>
+{% endblock %}

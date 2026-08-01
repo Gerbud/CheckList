@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Чек-лист магазина{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root { --content-width: {% if portal %}1280px{% else %}800px{% endif %}; }
+        body { background: #f4f6f8; color: #1f2937; padding-bottom: 6rem; }
+        .app-shell { max-width: var(--content-width); margin: 0 auto; }
+        .navbar-brand { font-weight: 700; }
+        .card { border: 0; border-radius: 1rem; box-shadow: 0 .25rem 1rem rgba(15, 23, 42, .07); }
+        .status-button { min-height: 3.5rem; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+        .answer-card { scroll-margin-top: 1rem; }
+        .mobile-action-bar { position: fixed; right: 0; bottom: 0; left: 0; z-index: 1020; max-width: var(--content-width); margin: 0 auto; padding: .75rem; background: rgba(255, 255, 255, .96); border-top: 1px solid #dee2e6; backdrop-filter: blur(8px); }
+        .mobile-action-bar .btn { min-height: 3.25rem; font-weight: 600; }
+        .summary-value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+        textarea.form-control { min-height: 5rem; }
+        .portal-layout { display: grid; gap: 1rem; }
+        .portal-nav a { display: block; padding: .65rem .8rem; border-radius: .6rem; color: #334155; text-decoration: none; }
+        .portal-nav a:hover { background: #e2e8f0; }
+        .table-responsive { border-radius: .75rem; }
+        .telegram-tabs { display: flex; gap: .35rem; overflow-x: auto; padding-bottom: .25rem; scrollbar-width: thin; }
+        .telegram-tab { flex: 0 0 auto; padding: .65rem .8rem; border-radius: .7rem; color: #475569; text-decoration: none; background: #fff; border: 1px solid #e2e8f0; }
+        .telegram-tab:hover { color: #0d6efd; border-color: #9ec5fe; }
+        .telegram-tab.active { color: #fff; background: #0d6efd; border-color: #0d6efd; font-weight: 600; }
+        .health-normal { border-left: .4rem solid #198754; }
+        .health-attention { border-left: .4rem solid #fd7e14; }
+        .health-critical { border-left: .4rem solid #dc3545; }
+        .report-card { min-height: 9rem; }
+        .problem-card { border-left: .4rem solid #fd7e14; }
+        .problem-card.critical { border-left-color: #dc3545; }
+        .report-chart { display: flex; align-items: end; gap: .4rem; min-height: 10rem; overflow-x: auto; padding: 1rem 0; }
+        .report-bar { flex: 1 0 2.5rem; max-width: 5rem; text-align: center; }
+        .report-bar-fill { background: #0d6efd; min-height: .25rem; border-radius: .35rem .35rem 0 0; }
+        .mobile-report-card { overflow-wrap: anywhere; }
+        @media (min-width: 768px) {
+            body { padding-bottom: 0; }
+            .mobile-action-bar { position: sticky; border: 0; border-radius: 1rem; margin: 1rem 0 0; box-shadow: 0 .25rem 1rem rgba(15, 23, 42, .1); }
+            .portal-layout { grid-template-columns: 220px minmax(0, 1fr); align-items: start; }
+            .portal-sidebar { position: sticky; top: 1rem; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark mb-3">
+    <div class="container-fluid app-shell px-3">
+        <a class="navbar-brand d-flex align-items-center gap-2" href="{% if request.user.is_authenticated %}{% url 'checklists:post_login_redirect' %}{% else %}{% url 'login' %}{% endif %}">
+            {% if store.logo %}<img src="{{ store.logo.url }}" alt="{{ store.name }}" style="max-height: 40px; max-width: 160px;">
+            {% elif portal_store.logo %}<img src="{{ portal_store.logo.url }}" alt="{{ portal_store.name }}" style="max-height: 40px; max-width: 160px;">
+            {% else %}Чек-лист{% endif %}
+        </a>
+        {% if request.user.is_authenticated %}
+            <div class="d-flex align-items-center gap-2">
+            {% if personal_schedule_available %}
+                <a class="btn btn-outline-light" href="{% url 'checklists:employee_schedule' %}">Мой график</a>
+            {% endif %}
+            <form method="post" action="{% url 'logout' %}" class="m-0">
+                {% csrf_token %}
+                <button class="btn btn-outline-light" type="submit">Выйти</button>
+            </form>
+            </div>
+        {% endif %}
+    </div>
+</nav>
+
+<main class="container-fluid app-shell px-3 pb-4">
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags|default:'info' }}" role="alert">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    {% if portal %}<div class="portal-layout">
+        <aside class="portal-sidebar card p-2 mb-3">
+            <details class="d-md-none"><summary class="fw-semibold p-2">Меню</summary>
+            <div class="mt-2">{% include "checklists/_portal_navigation.html" %}</div></details>
+            <div class="d-none d-md-block">{% include "checklists/_portal_navigation.html" %}</div>
+        </aside><section class="min-w-0">{% include "checklists/_breadcrumbs.html" %}{% block portal_content %}{% endblock %}</section>
+    </div>{% else %}{% include "checklists/_breadcrumbs.html" %}{% block content %}{% endblock %}{% endif %}
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

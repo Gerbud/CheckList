@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Копирование задачи{% endblock %}
+{% block portal_content %}
+<section class="card p-3">
+    <h1 class="h3 mb-3">Копирование задачи</h1>
+    <dl class="row mb-4">
+        <dt class="col-sm-3">Исходный магазин</dt>
+        <dd class="col-sm-9">{{ task.store.name }}</dd>
+        <dt class="col-sm-3">Задача</dt>
+        <dd class="col-sm-9">{{ task.text }}</dd>
+    </dl>
+    <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div class="{% if field.field.widget.input_type == 'checkbox' %}form-check{% else %}mb-3{% endif %}">
+                {% if field.field.widget.input_type == 'checkbox' %}
+                    {{ field }}
+                    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {% else %}
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                {% endif %}
+                {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+        {% endfor %}
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-primary">Создать копию</button>
+            <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Отмена</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

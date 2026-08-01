@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Сегодня — Чек-лист магазина{% endblock %}
+
+{% block content %}
+<section class="mb-4">
+    <p class="text-secondary mb-1">{{ profile.store.name }}</p>
+    <h1 class="h3 mb-1">Здравствуйте, {{ employee_name }}</h1>
+    <p class="mb-0">Сегодня {{ checklist_date|date:"j E Y" }}, {{ now_local|date:"H:i" }}</p>
+    {% if selected_employee %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center gap-2 mt-3 mb-0">
+        <strong>Сейчас заполняет: {{ selected_employee.display_name }}</strong>
+        <form method="post" action="{% url 'checklists:change_employee' %}" class="m-0">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'checklists:dashboard' %}">
+            <button class="btn btn-outline-primary btn-sm" type="submit">Сменить сотрудника</button>
+        </form>
+    </div>
+    {% endif %}
+</section>
+
+{% if shift_report.employees %}
+<section class="card p-3 p-sm-4 mb-4">
+    <h2 class="h4">Сотрудники текущей смены</h2>
+    <div class="vstack gap-2">
+        {% for item in shift_report.employees %}
+        <div class="d-flex justify-content-between align-items-center border rounded p-2">
+            <span>{{ item.employee.display_name }}</span>
+            <span class="badge {% if item.no_participation %}text-bg-secondary{% else %}text-bg-success{% endif %}">{% if item.no_participation %}Ещё не участвовал{% else %}Участвовал{% endif %}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<section class="card p-3 p-sm-4">
+    {% if service_error %}<div class="alert alert-danger">{{ service_error }}</div>{% endif %}
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div>
+            <h2 class="h4 mb-1">Ежедневный чек-лист</h2>
+            {% if daily %}
+                <span class="badge {% if daily.status == 'completed' %}text-bg-success{% elif daily.status == 'reopened' %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ daily.get_status_display }}</span>
+            {% else %}
+                <span class="badge text-bg-secondary">Ещё не начат</span>
+            {% endif %}
+        </div>
+        <span class="text-secondary">{{ checklist_date|date:"d.m.Y" }}</span>
+    </div>
+
+    <div class="row g-2 text-center mb-4">
+        <div class="col-4">
+            <div class="rounded bg-success-subtle p-3 h-100">
+                <div class="summary-value text-success">{{ summary.completed }}</div>
+                <small>Выполнено</small>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="rounded bg-danger-subtle p-3 h-100">
+                <div class="summary-value text-danger">{{ summary.failed }}</div>
+                <small>Не выполнено</small>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="rounded bg-secondary-subtle p-3 h-100">
+                <div class="summary-value">{{ summary.pending }}</div>
+                <small>Без ответа</small>
+            </div>
+        </div>
+    </div>
+
+    {% if stages %}
+        <div class="vstack gap-3 mb-4">
+            {% for item in stages %}
+                <article class="border rounded-3 p-3 {% if item.is_overdue %}border-danger bg-danger-subtle{% elif item.is_completed %}border-success bg-success-subtle{% elif item.is_soon %}border-warning bg-warning-subtle{% elif item.can_complete %}border-primary bg-primary-subtle{% else %}bg-secondary-subtle{% endif %}">
+                    <div class="d-flex justify-content-between align-items-start gap-3">
+                        <div>
+                            <h3 class="h5 mb-1">{{ item.stage.get_section_code_display }}</h3>
+                            <span class="badge {% if item.is_overdue %}text-bg-danger{% elif item.is_completed %}text-bg-success{% elif item.can_complete %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ item.state_label }}</span>
+                        </div>
+                        <div class="text-end">
+                            <small class="text-secondary d-block">{{ item.opens_time }}–{{ item.deadline_time }}</small>
+                            <strong class="deadline-timer" data-server-now="{{ server_now }}" data-opens-at="{{ item.stage.opens_at|date:'c' }}" data-completion-available-at="{{ item.stage.completion_available_at|date:'c' }}" data-deadline-at="{{ item.stage.deadline_at|date:'c' }}" data-warning-at="{{ item.warning_at|date:'c' }}" data-state="{{ item.state }}">
+                                {% if item.is_overdue %}Срок истёк{% elif item.is_completed %}Завершён{% elif item.is_locked %}Этап начнётся в {{ item.opens_time }}{% elif item.can_complete %}Можно завершить до {{ item.deadline_time }}{% else %}Завершение доступно с {{ item.completion_available_time }}{% endif %}
+                            </strong>
+                        </div>
+                    </div>
+                    <div class="small mt-2">Заполнено {{ item.answered_questions }} из {{ item.total_questions }} вопросов — {{ item.progress_percent }}%</div>
+                    <div class="progress mt-2" role="progressbar" aria-label="Прогресс заполнения этапа" aria-valuenow="{{ item.progress_percent }}" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar" style="width: {{ item.progress_percent }}%"></div>
+                    </div>
+                    {% if not item.is_completed and not item.can_complete %}
+                    <div class="small text-secondary mt-1">
+                        Можно открыть и заполнить заранее. Завершение доступно с
+                        {{ item.completion_available_time }}
+                    </div>
+                    {% endif %}
+                    {% if item.state == 'completed_late' %}<div class="small text-danger fw-semibold">Завершено с опозданием</div>{% elif item.state == 'completed' %}<div class="small text-success fw-semibold">Завершено вовремя</div>{% endif %}
+                    <a class="btn btn-sm {% if item.is_completed %}btn-outline-success{% else %}btn-primary{% endif %} mt-3" href="{{ item.url }}">{% if item.is_completed %}Посмотреть{% else %}Открыть этап{% endif %}</a>
+                </article>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <a class="btn btn-primary btn-lg w-100" href="{% url 'checklists:today' %}">
+        {% if not daily %}Начать чек-лист{% elif daily.status == 'completed' %}Посмотреть результат{% else %}Перейти к текущему этапу{% endif %}
+    </a>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}<script src="{% static 'checklists/deadline_timer.js' %}"></script>{% endblock %}

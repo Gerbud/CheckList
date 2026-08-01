@@ -1,0 +1,13 @@
+<nav aria-label="Хлебные крошки" class="mb-2">
+    <ol class="breadcrumb small mb-2">
+        {% for crumb in telegram_breadcrumbs %}
+            <li class="breadcrumb-item{% if forloop.last %} active{% endif %}"{% if forloop.last %} aria-current="page"{% endif %}>
+                {% if crumb.url and not forloop.last %}
+                    <a href="{{ crumb.url }}">{{ crumb.title }}</a>
+                {% else %}
+                    {{ crumb.title }}
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ol>
+</nav>

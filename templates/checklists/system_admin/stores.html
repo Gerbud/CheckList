@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Магазины{% endblock %}
+{% block portal_content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Магазины</h1><a class="btn btn-primary" href="{% url 'checklists:system_store_add' %}">Добавить</a></div>
+<div class="card table-responsive"><table class="table mb-0"><thead><tr><th>Магазин</th><th>Код</th><th>Статус</th><th>Директоры</th><th>Действия</th></tr></thead><tbody>{% for store in page %}<tr><td>{{ store.name }}</td><td>{{ store.code }}</td><td>{{ store.is_active|yesno:"Активен,Неактивен" }}</td><td>{{ store.director_count }}</td><td><div class="d-flex flex-wrap gap-1"><a class="btn btn-sm btn-outline-primary" href="{% url 'checklists:system_store_detail' store.pk %}">Открыть</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'checklists:system_store_edit' store.pk %}">Изменить</a><form method="post" action="{% if store.is_active %}{% url 'checklists:system_store_deactivate' store.pk %}{% else %}{% url 'checklists:system_store_activate' store.pk %}{% endif %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% if store.is_active %}Деактивировать{% else %}Активировать{% endif %}</button></form><a class="btn btn-sm btn-outline-danger" href="{% url 'checklists:system_admin_store_delete' store.pk %}">Удалить</a></div></td></tr>{% empty %}<tr><td colspan="5">Магазинов нет.</td></tr>{% endfor %}</tbody></table></div>
+{% include "checklists/pagination.html" with page=page querystring=querystring %}
+{% endblock %}

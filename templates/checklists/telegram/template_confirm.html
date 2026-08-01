@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<section class="card p-3">
+    <h1 class="h3">{{ title }}</h1>
+    <p>{{ description }}</p>
+    <dl class="row small">
+        <dt class="col-sm-3">Шаблон</dt><dd class="col-sm-9">{{ template_obj.name }}</dd>
+        <dt class="col-sm-3">Событие</dt><dd class="col-sm-9"><code>{{ template_obj.event_code }}</code></dd>
+    </dl>
+    {% if standard_preview %}
+    <div class="alert alert-light border">
+        <h2 class="h6">Так будет выглядеть стандартный шаблон</h2>
+        <pre class="mb-0 text-wrap">{{ standard_preview }}</pre>
+    </div>
+    {% endif %}
+    <form method="post" class="d-flex flex-wrap gap-2">
+        {% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}">
+        <button class="btn {{ confirm_class }}">{{ confirm_label }}</button>
+        <a class="btn btn-outline-secondary" href="{% url 'checklists:telegram_template_edit' template_obj.pk %}">Отмена</a>
+    </form>
+</section>
+{% endblock %}

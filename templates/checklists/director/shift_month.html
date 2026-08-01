@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}График сотрудников{% endblock %}
+{% block portal_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-1">График сотрудников</h1>
+    <p class="text-secondary mb-0">{{ selected_month|date:"F Y" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="?month={{ previous_month|date:'Y-m' }}">←</a>
+    <a class="btn btn-outline-secondary" href="?month={{ next_month|date:'Y-m' }}">→</a>
+    {% if can_edit_month %}
+      <a class="btn btn-primary" href="{% url 'checklists:director_shifts_bulk' %}">Заполнить массово</a>
+    {% endif %}
+  </div>
+</div>
+{% if not can_edit_month %}
+  <div class="alert alert-secondary">Прошлый месяц доступен только для просмотра.</div>
+{% endif %}
+<div class="row g-3">
+  {% for day in days %}
+    <div class="col-12 col-md-6 col-xl-4">
+      <article class="card p-3 h-100{% if day.day_status == day_off_status %} bg-light{% endif %}">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <strong>{{ day.date|date:"D, d.m" }}</strong>
+            {% if day.day_status == day_off_status %}
+              <span class="badge text-bg-secondary">Выходной</span>
+            {% endif %}
+          </div>
+          <a href="{% url 'checklists:director_shift_date' day.date|date:'Y-m-d' %}">Открыть</a>
+        </div>
+        {% for assignment in day.assignments %}
+          <div class="border-top py-2">
+            <div class="fw-semibold">{{ assignment.short_code }} · {{ assignment.employee.display_name }}</div>
+            <div class="small text-secondary">
+              {{ assignment.get_shift_type_display }}{% if assignment.shift_start %} · {{ assignment.shift_start|time:"H:i" }}–{{ assignment.shift_end|time:"H:i" }}{% endif %}
+              {% if assignment.is_responsible_for_checklist %} · ответственный{% endif %}
+            </div>
+          </div>
+        {% empty %}
+          <div class="small text-secondary">Смены не назначены.</div>
+        {% endfor %}
+        {% if day.editable and day.day_status != day_off_status %}
+          <a class="btn btn-sm btn-outline-primary mt-2" href="{% url 'checklists:director_shift_add' day.date|date:'Y-m-d' %}">Добавить смену</a>
+        {% endif %}
+      </article>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

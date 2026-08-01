@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Сводка магазинов{% endblock %}
+{% block portal_content %}
+<h1 class="h3 mb-1">Системная сводка магазинов</h1><p class="text-secondary">Сегодня · сформировано {{ generated_at|date:"d.m.Y H:i" }}</p>
+<div class="row g-3">{% for row in rows %}<div class="col-12 col-lg-6"><article class="card p-3 health-{{ row.health.code }}"><div class="d-flex justify-content-between"><h2 class="h5">{{ row.store.name }}</h2><strong>{{ row.health.label }}</strong></div><p class="mb-2">Чек-лист сегодня: {{ row.has_daily|yesno:"есть,не создан" }} · просроченных задач: {{ row.overdue_tasks }} · Telegram-ошибок: {{ row.telegram_errors }}</p>{% if row.health.reasons %}<ul>{% for reason in row.health.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}<form method="post" action="{% url 'checklists:system_select_managed_store' %}">{% csrf_token %}<input type="hidden" name="store" value="{{ row.store.pk }}"><input type="hidden" name="next" value="{% url 'checklists:director_reports' %}"><button class="btn btn-primary">Открыть отчёты магазина</button></form></article></div>{% empty %}<div class="col-12"><div class="alert alert-secondary">Активных магазинов нет.</div></div>{% endfor %}</div>
+{% endblock %}

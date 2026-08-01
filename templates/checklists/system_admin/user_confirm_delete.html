@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Удаление пользователя{% endblock %}
+{% block portal_content %}
+<section class="card p-3 p-md-4">
+    <h1 class="h3">Удалить пользователя?</h1>
+    <p><strong>{{ managed_user.username }}</strong></p>
+    <p class="text-danger">Учётная запись и её профиль будут удалены.</p>
+    <form method="post" class="d-flex gap-2">
+        {% csrf_token %}
+        <button class="btn btn-danger" type="submit">Удалить</button>
+        <a class="btn btn-outline-secondary" href="{% url 'checklists:system_user_detail' managed_user.pk %}">Отмена</a>
+    </form>
+</section>
+{% endblock %}

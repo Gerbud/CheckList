@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Удаление магазина{% endblock %}
+{% block portal_content %}
+<h1 class="h3">Удаление магазина</h1>
+
+<section class="card p-3 mb-3">
+    <h2 class="h5">{{ store.name }}</h2>
+    <dl class="row mb-0">
+        <dt class="col-sm-5">Code</dt><dd class="col-sm-7">{{ store.code }}</dd>
+        <dt class="col-sm-5">Активность</dt><dd class="col-sm-7">{{ store.is_active|yesno:"Активен,Неактивен" }}</dd>
+        <dt class="col-sm-5">Директоры</dt><dd class="col-sm-7">{{ summary.directors_count }}</dd>
+        <dt class="col-sm-5">Аккаунты магазина</dt><dd class="col-sm-7">{{ summary.store_accounts_count }}</dd>
+        <dt class="col-sm-5">Терминальные аккаунты</dt><dd class="col-sm-7">{{ summary.terminal_accounts_count }}</dd>
+        <dt class="col-sm-5">Сотрудники</dt><dd class="col-sm-7">{{ summary.employees_count }}</dd>
+        <dt class="col-sm-5">Смены</dt><dd class="col-sm-7">{{ summary.shifts_count }}</dd>
+        <dt class="col-sm-5">Шаблоны / версии</dt><dd class="col-sm-7">{{ summary.templates_count }} / {{ summary.versions_count }}</dd>
+        <dt class="col-sm-5">Ежедневные чек-листы</dt><dd class="col-sm-7">{{ summary.daily_checklists_count }}</dd>
+        <dt class="col-sm-5">Снимки вопросов</dt><dd class="col-sm-7">{{ summary.daily_items_count }}</dd>
+        <dt class="col-sm-5">Исторические ответы</dt><dd class="col-sm-7">{{ summary.answers_count }}</dd>
+        <dt class="col-sm-5">Ревизии ответов</dt><dd class="col-sm-7">{{ summary.revisions_count }}</dd>
+        <dt class="col-sm-5">Telegram-история</dt><dd class="col-sm-7">{{ summary.telegram_history_count }}</dd>
+        <dt class="col-sm-5">Записи AuditLog</dt><dd class="col-sm-7">{{ summary.audit_count }}</dd>
+        <dt class="col-sm-5">Технические настройки</dt><dd class="col-sm-7">{{ summary.technical_settings_count }}</dd>
+    </dl>
+</section>
+
+{% if summary.can_hard_delete %}
+    {% if summary.audit_will_be_deleted %}
+        <div class="alert alert-danger">
+            Магазин будет удалён без возможности восстановления.
+            Он не содержит пользователей или бизнес-истории.
+            При удалении магазина также будет удалён его журнал действий:
+            {{ summary.audit_count }} записей.
+        </div>
+    {% else %}
+        <div class="alert alert-danger">
+            Магазин не содержит пользователей или бизнес-истории.
+            Магазин будет удалён без возможности восстановления.
+        </div>
+    {% endif %}
+{% else %}
+    <div class="alert alert-warning">
+        Магазин содержит пользователей или исторические данные и не может быть
+        физически удалён. Он будет деактивирован, пользовательский доступ будет
+        отключён, а история сохранится.
+    </div>
+    <h2 class="h6">Причины блокировки физического удаления</h2>
+    <ul class="small">
+        {% for reason in summary.blocking_reasons %}<li>{{ reason }}</li>{% endfor %}
+    </ul>
+{% endif %}
+
+<div class="d-flex flex-wrap gap-2">
+    <form method="post">
+        {% csrf_token %}
+        <button class="btn btn-danger" type="submit">
+            {% if summary.can_hard_delete and summary.audit_will_be_deleted %}Удалить магазин и журнал{% elif summary.can_hard_delete %}Удалить магазин{% else %}Деактивировать магазин{% endif %}
+        </button>
+    </form>
+    <a class="btn btn-outline-secondary" href="{% url 'checklists:system_stores' %}">Отмена</a>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+<form method="get" class="card p-3 mb-3 report-filters" aria-label="Фильтры отчёта">
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <a class="btn btn-sm btn-outline-secondary" href="?period=today">Сегодня</a>
+    <a class="btn btn-sm btn-outline-secondary" href="?period=yesterday">Вчера</a>
+    <a class="btn btn-sm btn-outline-secondary" href="?period=7days">7 дней</a>
+    <a class="btn btn-sm btn-outline-secondary" href="?period=30days">30 дней</a>
+    <a class="btn btn-sm btn-outline-secondary" href="?period=month">Текущий месяц</a>
+  </div>
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-lg-3"><label class="form-label" for="date-from">С</label><input id="date-from" type="date" class="form-control" name="date_from" value="{{ period.date_from|date:'Y-m-d' }}"></div>
+    <div class="col-6 col-lg-3"><label class="form-label" for="date-to">По</label><input id="date-to" type="date" class="form-control" name="date_to" value="{{ period.date_to|date:'Y-m-d' }}"></div>
+    {% block report_extra_filters %}{% endblock %}
+    <div class="col-12 col-lg-auto d-flex gap-2"><button class="btn btn-primary">Показать</button><a class="btn btn-outline-secondary" href="{{ request.path }}">Сбросить фильтры</a></div>
+  </div>
+  {% if period.was_limited %}<p class="text-warning mt-2 mb-0">Период ограничен последними 366 днями.</p>{% endif %}
+</form>

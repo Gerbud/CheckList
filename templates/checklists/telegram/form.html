@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<section class="card p-3"><h1 class="h3">{{ title }}</h1><form method="post">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}">{{ form.as_p }}{% if template_obj %}<button class="btn btn-outline-secondary" name="action" value="preview">Предпросмотр</button><button class="btn btn-outline-success" name="action" value="test">Тестовая отправка</button><button class="btn btn-primary" name="action" value="save">Сохранить</button>{% else %}<button class="btn btn-primary">Сохранить</button>{% endif %}</form>{% if preview %}<div class="alert alert-light border mt-3"><h2 class="h6">Предпросмотр</h2><pre class="mb-0 text-wrap">{{ preview }}</pre></div>{% endif %}{% if template_obj %}<form method="post" action="{% url 'checklists:telegram_template_reset' template_obj.pk %}" class="mt-3">{% csrf_token %}<input type="hidden" name="selected_store" value="{{ store.pk }}"><button class="btn btn-outline-danger">Восстановить стандартный шаблон</button></form>{% endif %}</section>
+{% endblock %}

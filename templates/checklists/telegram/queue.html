@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Telegram сообщения{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<div class="telegram-tabs mb-3">
+    <a class="telegram-tab{% if queue_type == 'outbound' %} active{% endif %}" href="?type=outbound">Telegram сообщения</a>
+    <a class="telegram-tab{% if queue_type == 'inbound' %} active{% endif %}" href="?type=inbound">Входящие команды</a>
+</div>
+<section class="card p-3">
+    <h1 class="h3">{% if queue_type == 'inbound' %}Входящие команды{% else %}Telegram сообщения{% endif %}</h1>
+    {% if queue_type == 'inbound' %}
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Получено</th><th>Кто</th><th>Команда</th><th>Режим</th><th>Ответ</th><th>Ошибка</th></tr></thead>
+            <tbody>
+            {% for item in telegram_updates %}
+            <tr>
+                <td>{{ item.created_at|date:"d.m H:i:s" }}</td>
+                <td>{{ item.sender_display }}<br><small>ID {{ item.telegram_user_id|default:"—" }}</small></td>
+                <td>{{ item.command|default:"callback" }}</td>
+                <td>{% if item.response_status == 'background' %}Фоновый{% else %}Мгновенный{% endif %}</td>
+                <td>{{ item.get_response_status_display|default:"—" }}{% if item.responded_at %}<br><small>{{ item.responded_at|date:"H:i:s" }}</small>{% endif %}</td>
+                <td>{{ item.response_error|default:item.processing_error|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">Журнал пуст.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <form method="get" class="row g-2 mb-3">
+        <input type="hidden" name="type" value="outbound">
+        <div class="col-sm-6 col-lg-3">
+            <label class="form-label">Пользователь</label>
+            <select class="form-select" name="user">
+                <option value="">Все</option>
+                {% for profile in message_users %}
+                <option value="{{ profile.user_id }}" {% if selected_user == profile.user_id|stringformat:'s' %}selected{% endif %}>{{ profile.user.get_username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if telegram_is_system_admin %}
+        <div class="col-sm-6 col-lg-3">
+            <label class="form-label">Магазин</label>
+            <select class="form-select" name="store">
+                <option value="">Все</option>
+                {% for item in message_stores %}
+                <option value="{{ item.pk }}" {% if selected_store_filter == item.pk|stringformat:'s' %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div class="col-6 col-lg-2"><label class="form-label">С даты</label><input class="form-control" type="date" name="date_from" value="{{ date_from }}"></div>
+        <div class="col-6 col-lg-2"><label class="form-label">По дату</label><input class="form-control" type="date" name="date_to" value="{{ date_to }}"></div>
+        <div class="col-sm-6 col-lg-2">
+            <label class="form-label">Статус</label>
+            <select class="form-select" name="status">
+                <option value="">Все</option>
+                {% for value,label in status_choices %}
+                <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12"><button class="btn btn-outline-primary">Применить</button></div>
+    </form>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Когда</th><th>Пользователь</th><th>Магазин</th><th>Тип</th><th>Статус</th><th>Message ID</th><th>Ошибка</th><th></th></tr></thead>
+            <tbody>
+            {% for item in outbound_messages %}
+            <tr>
+                <td>{{ item.created_at|date:"d.m.Y H:i" }}</td>
+                <td>{{ item.recipient_label }}</td>
+                <td>{{ item.store.name|default:"—" }}</td>
+                <td>{{ item.message_type }}</td>
+                <td>{{ item.get_status_display }}</td>
+                <td>{{ item.telegram_message_id|default:"—" }}</td>
+                <td>{{ item.last_error|default:"—" }}</td>
+                <td>
+                    {% if item.status == 'failed' %}
+                    <form method="post" action="{% url 'checklists:telegram_queue_retry' item.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">Повторить</button></form>
+                    {% elif item.status == 'sent' and item.telegram_message_id %}
+                    <form method="post" action="{% url 'checklists:telegram_message_delete' item.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Удалить в Telegram</button></form>
+                    {% elif item.status == 'deleted' %}
+                    <small>{{ item.deleted_at|date:"d.m.Y H:i" }} · {{ item.deleted_by.get_username }}</small>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8">Сообщений нет.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

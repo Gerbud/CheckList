@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Журнал действий{% endblock %}
+{% block portal_content %}
+<h1 class="h3">Журнал действий</h1>
+
+<form method="get" class="card p-3 mb-3">
+    <div class="row g-2 align-items-center">
+        <div class="col-12 col-md">
+            <select class="form-select" name="store">
+                <option value="">Все магазины и системные действия</option>
+                {% for item in stores %}
+                    <option value="{{ item.pk }}" {% if selected_store == item.pk|stringformat:'s' %}selected{% endif %}>{{ item.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto"><button class="btn btn-primary" type="submit">Фильтр</button></div>
+        <div class="col-12 col-md-auto">
+            {% if selected_store_obj %}
+                <a class="btn btn-outline-danger w-100" href="{% url 'checklists:system_admin_store_audit_clear' selected_store_obj.pk %}">Очистить журнал магазина</a>
+            {% else %}
+                <a class="btn btn-outline-danger w-100" href="{% url 'checklists:system_admin_audit_clear_all' %}">Очистить весь журнал</a>
+            {% endif %}
+        </div>
+    </div>
+</form>
+
+<div class="card table-responsive">
+    <table class="table mb-0">
+        <thead><tr><th>Время</th><th>Действие</th><th>Инициатор</th><th>Магазин</th><th>Объект</th></tr></thead>
+        <tbody>
+        {% for item in page %}
+            <tr>
+                <td>{{ item.created_at|date:"d.m.Y H:i" }}</td>
+                <td>{{ item.get_action_display }}</td>
+                <td>{{ item.actor.username|default:"Система" }}</td>
+                <td>{{ item.store.name|default:"—" }}</td>
+                <td>{{ item.object_type }} #{{ item.object_id }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5">Записей нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include "checklists/pagination.html" with page=page querystring=querystring %}
+{% endblock %}

@@ -1,0 +1,99 @@
+{% for section in sections %}
+<section class="mb-4" aria-labelledby="section-{{ section.code }}">
+    <h2 class="h4 mb-3" id="section-{{ section.code }}">{{ section.name }}</h2>
+    <div class="vstack gap-3">
+        {% for row in section.rows %}
+        <article class="card answer-card p-3 p-sm-4">
+            <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+                <p class="fw-semibold fs-5 mb-0">{{ row.item.item_text }}</p>
+                {% if row.item.answer_type_snapshot == 'integer' %}
+                <span class="badge {% if row.answer.integer_value != None %}text-bg-primary{% else %}text-bg-warning{% endif %}">{% if row.answer.integer_value != None %}Ответ: {{ row.answer.integer_value }}{% else %}Ожидает ответа{% endif %}</span>
+                {% else %}
+                <span class="badge {% if row.answer.status == 'completed' %}text-bg-success{% elif row.answer.status == 'failed' %}text-bg-danger{% elif row.answer.status == 'not_applicable' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ row.answer.get_status_display }}</span>
+                {% endif %}
+            </div>
+            {% if row.item.item_description %}<p class="text-secondary">{{ row.item.item_description }}</p>{% endif %}
+            {% if not row.item.source_item_id %}<span class="badge text-bg-info mb-2">Разовая задача</span>{% endif %}
+            {% if not row.item.is_required %}<span class="badge text-bg-light mb-2">Необязательный пункт</span>{% endif %}
+
+            {% if editable %}
+            {% if row.item.answer_type_snapshot == 'integer' %}
+            <label class="form-label" for="{{ row.integer_field.id_for_label }}">Укажите количество</label>
+            <input class="form-control form-control-lg {% if row.integer_field.errors %}is-invalid{% endif %}" type="number" min="0" step="1" inputmode="numeric" name="{{ row.integer_field.html_name }}" id="{{ row.integer_field.id_for_label }}" value="{{ row.integer_field.value|default_if_none:'' }}">
+            {% if row.integer_field.errors %}<div class="invalid-feedback d-block">{{ row.integer_field.errors }}</div>{% endif %}
+            {% else %}
+            <div class="row g-2 mb-3" role="group" aria-label="Статус пункта">
+                <div class="col-6 col-sm-4">
+                    <input class="btn-check" type="radio" name="{{ row.status_field.html_name }}" id="{{ row.status_field.html_name }}_completed" value="completed" {% if row.status_field.value == 'completed' %}checked{% endif %}>
+                    <label class="btn btn-outline-success btn-lg status-button w-100" for="{{ row.status_field.html_name }}_completed">Выполнено</label>
+                </div>
+                <div class="col-6 col-sm-4">
+                    <input class="btn-check" type="radio" name="{{ row.status_field.html_name }}" id="{{ row.status_field.html_name }}_failed" value="failed" {% if row.status_field.value == 'failed' %}checked{% endif %}>
+                    <label class="btn btn-outline-danger btn-lg status-button w-100" for="{{ row.status_field.html_name }}_failed">Не выполнено</label>
+                </div>
+                {% if row.item.allow_not_applicable %}
+                <div class="col-12 col-sm-4">
+                    <input class="btn-check" type="radio" name="{{ row.status_field.html_name }}" id="{{ row.status_field.html_name }}_not_applicable" value="not_applicable" {% if row.status_field.value == 'not_applicable' %}checked{% endif %}>
+                    <label class="btn btn-outline-secondary btn-lg status-button w-100" for="{{ row.status_field.html_name }}_not_applicable">Не применимо</label>
+                </div>
+                {% endif %}
+            </div>
+            {% if row.status_field.errors %}
+                <div class="text-danger small mb-2">{{ row.status_field.errors }}</div>
+            {% endif %}
+            <label class="form-label" for="{{ row.comment_field.id_for_label }}">Комментарий</label>
+            <textarea class="form-control {% if row.comment_field.errors %}is-invalid{% endif %}" name="{{ row.comment_field.html_name }}" id="{{ row.comment_field.id_for_label }}" rows="2" placeholder="Добавьте пояснение при необходимости">{{ row.comment_field.value|default_if_none:'' }}</textarea>
+            {% if row.comment_field.errors %}
+                <div class="invalid-feedback d-block">{{ row.comment_field.errors }}</div>
+            {% endif %}
+            {% endif %}
+            {% if row.answer.answered_at %}
+                <label class="form-label mt-3" for="{{ row.reason_field.id_for_label }}">Причина изменения сохранённого ответа</label>
+                <textarea class="form-control {% if row.reason_field.errors %}is-invalid{% endif %}" name="{{ row.reason_field.html_name }}" id="{{ row.reason_field.id_for_label }}" rows="2" placeholder="Минимум 5 символов; обычный комментарий остаётся выше">{{ row.reason_field.value|default_if_none:'' }}</textarea>
+                {% if row.reason_field.errors %}<div class="invalid-feedback d-block">{{ row.reason_field.errors }}</div>{% endif %}
+            {% endif %}
+            {% else %}
+                <dl class="mb-0">
+                    <dt class="text-secondary fw-normal">Ответ</dt>
+                    <dd class="fw-semibold">{% if row.item.answer_type_snapshot == 'integer' %}{% if row.answer.integer_value != None %}{{ row.answer.integer_value }}{% else %}—{% endif %}{% else %}{{ row.answer.get_status_display }}{% endif %}</dd>
+                    {% if row.item.answer_type_snapshot == 'status' %}
+                    {% if row.answer.comment %}
+                        <dt class="text-secondary fw-normal">Комментарий</dt>
+                        <dd class="mb-0">{{ row.answer.comment }}</dd>
+                    {% endif %}
+                    {% endif %}
+                </dl>
+            {% endif %}
+
+            {% if row.revisions %}
+            <div class="mt-3">
+                <span class="badge text-bg-warning">Ответ изменён</span>
+                {% with latest=row.revisions.0 %}
+                <p class="small text-secondary mt-2 mb-2">
+                    Последнее изменение: {{ latest.changed_at|date:"d.m.Y H:i" }}{% if latest.changed_by_employee %}, {{ latest.changed_by_employee.display_name }}{% endif %}. Причина: {{ latest.change_reason }}
+                </p>
+                {% endwith %}
+                <details>
+                    <summary class="fw-semibold">История изменений</summary>
+                    <div class="vstack gap-2 mt-2">
+                    {% for revision in row.revisions %}
+                        <div class="border rounded p-2 small">
+                            <div><strong>{{ revision.changed_at|date:"d.m.Y H:i" }}</strong>{% if revision.changed_by_employee %} — {{ revision.changed_by_employee.display_name }}{% endif %}</div>
+                            {% if row.item.answer_type_snapshot == 'integer' %}
+                            <div>Ответ: {{ revision.previous_integer_value|default_if_none:"—" }} → {{ revision.new_integer_value|default_if_none:"—" }}</div>
+                            {% else %}
+                            <div>Статус: {{ revision.get_previous_status_display }} → {{ revision.get_new_status_display }}</div>
+                            <div>Комментарий: «{{ revision.previous_comment }}» → «{{ revision.new_comment }}»</div>
+                            {% endif %}
+                            <div>Причина: {{ revision.change_reason }}</div>
+                        </div>
+                    {% endfor %}
+                    </div>
+                </details>
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endfor %}

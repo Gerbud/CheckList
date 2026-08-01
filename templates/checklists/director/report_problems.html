@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Что требует внимания{% endblock %}
+{% block portal_content %}
+<div class="d-flex justify-content-between flex-wrap"><div><h1 class="h3 mb-1">Что требует внимания</h1><p class="text-secondary">{{ store.name }} · {{ period.label }}</p></div><a class="btn btn-outline-success align-self-start" href="?{{ querystring }}{% if querystring %}&{% endif %}format=csv">CSV для Excel</a></div>
+{% include "checklists/director/_report_period_filter.html" %}
+<div class="row g-2">{% for problem in rows %}<div class="col-12"><div class="card p-3 problem-card {% if problem.severity == 'critical' %}critical{% endif %}"><strong>{% if problem.severity == 'critical' %}⛔ Критично{% else %}⚠ Требует внимания{% endif %}: {{ problem.title }}</strong><span>{{ problem.date|date:"d.m.Y" }} · {{ problem.detail }}</span><div class="mt-2">{% if problem.checklist_id %}<a href="{% url 'checklists:director_checklist_detail' problem.checklist_id %}">Открыть чек-лист</a>{% elif problem.task_id %}<a href="{% url 'checklists:director_task_detail' problem.task_id %}">Открыть задачу</a>{% elif problem.employee_id %}<a href="{% url 'checklists:director_report_employee_detail' problem.employee_id %}">Открыть сотрудника</a>{% endif %}</div></div></div>{% empty %}<div class="col-12"><div class="alert alert-success">За выбранный период проблем не обнаружено.</div></div>{% endfor %}</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Кабинет директора{% endblock %}
+{% block portal_content %}<header class="mb-3"><h1 class="h3">{{ store.name }}</h1><p class="text-secondary">{{ work_date|date:"d.m.Y" }}, {{ now_local|date:"H:i" }}</p></header>
+<div class="row g-3 mb-3"><div class="col-6 col-lg-3"><div class="card p-3"><div class="summary-value">{{ completed_answers }}</div><small>Заполнено</small></div></div><div class="col-6 col-lg-3"><div class="card p-3"><div class="summary-value">{{ pending_answers }}</div><small>Осталось</small></div></div></div>
+<section class="card p-3 mb-3">
+  <h2 class="h5">Этапы сегодня</h2>
+  <div class="row g-3">
+    {% for item in stage_summary %}
+    <div class="col-12 col-md-4">
+      <article class="border rounded p-3 h-100">
+        <h3 class="h6">{{ item.label }}</h3>
+        <dl class="row mb-0 small">
+          <dt class="col-8 fw-normal">Завершили</dt><dd class="col-4 text-end mb-1">{{ item.completed }}</dd>
+          <dt class="col-8 fw-normal">Есть черновик</dt><dd class="col-4 text-end mb-1">{{ item.drafts }}</dd>
+          <dt class="col-8 fw-normal">Не приступили</dt><dd class="col-4 text-end mb-1">{{ item.not_started }}</dd>
+          <dt class="col-8 fw-normal">Просрочили</dt><dd class="col-4 text-end mb-0">{{ item.overdue }}</dd>
+        </dl>
+      </article>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+<div class="row g-3 mb-3">{% for item in stages %}<div class="col-12 col-lg-4"><article class="card p-3"><h2 class="h5">{{ item.stage.get_section_code_display }}</h2><span class="badge text-bg-{% if item.stage.status == 'completed' %}success{% elif item.stage.status == 'completed_late' or item.stage.status == 'overdue' %}danger{% else %}secondary{% endif %}">{{ item.stage.get_status_display }}</span><div class="small mt-2">Дедлайн: {{ item.stage.deadline_at|date:"H:i" }}</div>{% if item.stage.completed_at %}<div class="small">Завершён: {{ item.stage.completed_at|date:"H:i" }}</div>{% endif %}{% if item.lateness %}<div class="text-danger">Опоздание: {{ item.lateness }}</div>{% endif %}{% if item.stage.completed_by_employee %}<div>{{ item.stage.completed_by_employee.display_name }}</div>{% endif %}</article></div>{% empty %}<div class="col"><div class="alert alert-secondary">Чек-лист на сегодня ещё не создан.</div></div>{% endfor %}</div>
+<div class="row g-3"><div class="col-lg-6"><section class="card p-3"><h2 class="h5">Смена и участие</h2>{% for row in shift_report.employees %}<div class="d-flex justify-content-between border-bottom py-2"><span>{{ row.employee.display_name }}</span><span>{% if row.no_participation %}Не участвовал{% else %}Участвовал{% endif %}</span></div>{% empty %}<p class="text-secondary">Назначений нет.</p>{% endfor %}</section></div><div class="col-lg-6"><section class="card p-3"><h2 class="h5">Последние изменения</h2>{% for revision in recent_revisions %}<div class="border-bottom py-2"><strong>{{ revision.changed_by_employee.display_name|default:"—" }}</strong>: {{ revision.change_reason }}<div class="small text-secondary">{{ revision.changed_at|date:"d.m H:i" }}</div></div>{% empty %}<p class="text-secondary">Изменений нет.</p>{% endfor %}</section></div></div>
+<section class="card p-3 mt-3"><h2 class="h5">Ошибки Telegram</h2>{% for error in telegram_errors %}<div>{{ error.updated_at|date:"d.m H:i" }} — {{ error.last_error }}</div>{% empty %}<span class="text-secondary">Ошибок нет.</span>{% endfor %}</section>{% endblock %}

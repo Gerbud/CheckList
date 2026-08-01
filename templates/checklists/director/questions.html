@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Вопросы{% endblock %}
+{% block extra_head %}
+<style>
+  .question-list { display: grid; gap: .75rem; }
+  .question-card { border: 1px solid #e2e8f0; box-shadow: none; cursor: default; }
+  .question-drag-handle { cursor: grab; touch-action: none; user-select: none; }
+  .question-drag-handle:active { cursor: grabbing; }
+  .question-sort-ghost { opacity: .35; }
+  .question-sort-chosen { border-color: #0d6efd; }
+</style>
+{% endblock %}
+{% block portal_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-1">Вопросы чек-листа</h1>
+    <p class="text-secondary mb-0">Перетаскивайте карточки за маркер слева. Порядок сохраняется автоматически.</p>
+  </div>
+  <a class="btn btn-primary" href="{% url 'checklists:director_question_add' %}">Добавить вопрос</a>
+</div>
+<div id="question-sort-status" class="small text-secondary mb-2" role="status" aria-live="polite"></div>
+{% for code,label,questions in grouped_questions %}
+<section class="card p-3 p-md-4 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h4 mb-0">{{ label }}</h2>
+    <span class="badge text-bg-light">{{ questions|length }}</span>
+  </div>
+  <div class="question-list" data-question-list data-section-code="{{ code }}">
+    <input type="hidden" data-csrf-token value="{{ csrf_token }}">
+    {% for question in questions %}
+      <article class="card question-card p-3" data-question-id="{{ question.pk }}">
+        <div class="d-flex gap-3">
+          <button type="button" class="btn btn-light question-drag-handle align-self-start" aria-label="Перетащить вопрос">⋮⋮</button>
+          <div class="flex-grow-1 min-w-0">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <strong>{{ question.text }}</strong>
+              {% if not question.is_active %}<span class="badge text-bg-secondary">Неактивен</span>{% endif %}
+              <span class="badge text-bg-light">{{ question.get_answer_type_display }}</span>
+              {% if question.is_required %}<span class="badge text-bg-primary">Обязательный</span>{% endif %}
+            </div>
+            {% if question.description %}<p class="text-secondary mb-2">{{ question.description }}</p>{% endif %}
+            <div class="d-flex flex-wrap gap-2">
+              <form method="post" action="{% url 'checklists:director_questions_reorder' %}">
+                {% csrf_token %}
+                <input type="hidden" name="section_code" value="{{ code }}">
+                <input type="hidden" name="question_id" value="{{ question.pk }}">
+                <button name="direction" value="up" class="btn btn-sm btn-light" aria-label="Выше">↑</button>
+                <button name="direction" value="down" class="btn btn-sm btn-light" aria-label="Ниже">↓</button>
+              </form>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'checklists:director_question_edit' question.pk %}">Изменить</a>
+              <form method="post" action="{% if question.is_active %}{% url 'checklists:director_question_deactivate' question.pk %}{% else %}{% url 'checklists:director_question_activate' question.pk %}{% endif %}">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-secondary">{% if question.is_active %}Деактивировать{% else %}Активировать{% endif %}</button>
+              </form>
+              <a class="btn btn-sm btn-outline-danger" href="{% url 'checklists:director_question_delete' question.pk %}">Удалить</a>
+            </div>
+          </div>
+        </div>
+      </article>
+    {% empty %}
+      <p class="text-secondary mb-0">Вопросов нет.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+<script>
+(() => {
+  const status = document.getElementById("question-sort-status");
+  document.querySelectorAll("[data-question-list]").forEach((list) => {
+    if (!list.querySelector("[data-question-id]")) return;
+    let previousOrder = [];
+    const sortable = new Sortable(list, {
+      animation: 160,
+      handle: ".question-drag-handle",
+      draggable: "[data-question-id]",
+      ghostClass: "question-sort-ghost",
+      chosenClass: "question-sort-chosen",
+      onStart() {
+        previousOrder = Array.from(list.querySelectorAll("[data-question-id]"), item => item.dataset.questionId);
+      },
+      async onEnd() {
+        const cards = Array.from(list.querySelectorAll("[data-question-id]"));
+        const formData = new FormData();
+        formData.append("section_code", list.dataset.sectionCode);
+        cards.forEach(card => formData.append("ordered_ids", card.dataset.questionId));
+        status.textContent = "Сохраняем порядок…";
+        try {
+          const response = await fetch("{% url 'checklists:director_questions_reorder' %}", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "X-CSRFToken": list.querySelector("[data-csrf-token]").value,
+              "X-Requested-With": "XMLHttpRequest"
+            },
+            body: formData
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || "Не удалось сохранить порядок.");
+          cards.forEach((card, index) => {
+            const oldId = card.dataset.questionId;
+            const newId = String(result.ordered_ids[index]);
+            card.dataset.questionId = newId;
+            card.querySelectorAll('input[name="question_id"]').forEach(input => {
+              input.value = newId;
+            });
+            card.querySelectorAll("[href], [action]").forEach(element => {
+              for (const attribute of ["href", "action"]) {
+                const value = element.getAttribute(attribute);
+                if (value) element.setAttribute(attribute, value.replace(`/questions/${oldId}/`, `/questions/${newId}/`));
+              }
+            });
+          });
+          status.classList.remove("text-danger");
+          status.textContent = "Порядок сохранён.";
+        } catch (error) {
+          sortable.sort(previousOrder);
+          status.textContent = error.message;
+          status.classList.add("text-danger");
+        }
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

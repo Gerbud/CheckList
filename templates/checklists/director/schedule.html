@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Настройки магазина{% endblock %}
+{% block portal_content %}
+<div class="alert alert-warning">
+  Время этапов применяется только к новым чек-листам. Рабочие дни и статусы
+  календаря используются при создании чек-листа и планировании уведомлений.
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-7">
+    <section class="card p-3 p-md-4">
+      <h1 class="h3">Расписание магазина</h1>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="schedule">
+        {{ form.non_field_errors }}
+        {{ form.opening_time.as_field_group }}
+        {{ form.morning_deadline.as_field_group }}
+        {{ form.daytime_deadline.as_field_group }}
+        {{ form.closing_deadline.as_field_group }}
+        <fieldset class="border rounded p-3 my-3">
+          <legend class="h5">За сколько времени до окончания разрешать завершение этапа</legend>
+          <p class="small text-secondary">
+            Сотрудник может открыть этап и сохранить ответы заранее. Завершить
+            этап он сможет только в указанном интервале перед окончанием.
+            Значение 0 разрешает завершение сразу после открытия этапа.
+          </p>
+          {{ form.morning_completion_window_minutes.as_field_group }}
+          {{ form.day_completion_window_minutes.as_field_group }}
+          {{ form.evening_completion_window_minutes.as_field_group }}
+        </fieldset>
+        {{ form.warning_minutes_before.as_field_group }}
+        {{ form.notifications_enabled.as_field_group }}
+        {{ form.working_weekdays.as_field_group }}
+        {{ form.is_active.as_field_group }}
+        <button class="btn btn-primary">Сохранить расписание</button>
+      </form>
+    </section>
+  </div>
+  <div class="col-12 col-xl-5">
+    <section class="card p-3 p-md-4 mb-3">
+      <h2 class="h4">Логотип</h2>
+      {% if store.logo %}
+        <img class="img-fluid mb-3" src="{{ store.logo.url }}" alt="{{ store.name }}" style="max-height: 120px;">
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="logo">
+        {{ logo_form.as_p }}
+        <button class="btn btn-outline-primary">Сохранить логотип</button>
+      </form>
+    </section>
+    <section class="card p-3 p-md-4">
+      <h2 class="h4">Особый статус дня</h2>
+      <p class="small text-secondary">
+        Тестирование, выходной и чрезвычайная ситуация сохраняются в истории,
+        но исключаются из рейтинга. В выходной чек-лист не требуется.
+      </p>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="day_status">
+        {{ day_form.as_p }}
+        <button class="btn btn-outline-primary">Сохранить статус</button>
+      </form>
+    </section>
+  </div>
+</div>
+
+<section class="card p-3 p-md-4 mt-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+      <h2 class="h4 mb-1">Календарь статусов</h2>
+      <div class="text-secondary">{{ selected_month|date:"F Y" }}</div>
+    </div>
+    <div>
+      <a class="btn btn-outline-secondary" href="?month={{ previous_month|date:'Y-m' }}">←</a>
+      <a class="btn btn-outline-secondary" href="?month={{ next_month|date:'Y-m' }}">→</a>
+    </div>
+  </div>
+  <div class="row g-2">
+    {% for day in calendar_days %}
+      <div class="col-6 col-md-4 col-xl-3">
+        <div class="border rounded-3 p-2 h-100">
+          <strong>{{ day.date|date:"D, d.m" }}</strong>
+          <div class="small">{{ day.status_label }}</div>
+          {% if day.override.comment %}<div class="small text-secondary">{{ day.override.comment }}</div>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

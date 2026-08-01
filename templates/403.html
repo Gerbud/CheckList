@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Доступ запрещён{% endblock %}
+
+{% block content %}
+<div class="card p-4 my-4">
+    <h1 class="h3">Доступ запрещён</h1>
+    <p>У вас нет права выполнить это действие.</p>
+    <a class="btn btn-primary" href="{% url 'checklists:dashboard' %}">На главную</a>
+</div>
+{% endblock %}

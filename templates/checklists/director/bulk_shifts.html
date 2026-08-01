@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Календарь графика сотрудников{% endblock %}
+{% block extra_head %}
+<style>
+  .schedule-page { --day-width: 34px; }
+  .schedule-header { margin-bottom: .6rem; }
+  .schedule-header h1 { font-size: 1.25rem; line-height: 1.2; margin: 0; }
+  .schedule-toolbar { padding: .55rem .65rem; margin-bottom: .6rem; border-radius: .8rem; }
+  .schedule-toolbar .btn, .schedule-toolbar .form-select { white-space: nowrap; }
+  .schedule-metrics { font-size: .75rem; color: #64748b; }
+  .schedule-progress { width: 72px; height: 5px; }
+  .selection-summary { min-width: 8rem; }
+  .shift-calendar-card { overflow: hidden; border-radius: .8rem; }
+  .shift-calendar-wrap {
+    overflow: auto;
+    max-height: calc(100vh - 255px);
+    min-height: 18rem;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .shift-calendar {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    user-select: none;
+  }
+  .shift-calendar th, .shift-calendar td {
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-right: 1px solid #edf0f3;
+    border-bottom: 1px solid #edf0f3;
+    text-align: center;
+  }
+  .shift-calendar thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    width: var(--day-width);
+    min-width: var(--day-width);
+    height: 35px;
+    padding: 2px 0;
+    background: #f8fafc;
+    color: #334155;
+    font-size: .72rem;
+    line-height: 1.05;
+  }
+  .shift-calendar thead small { font-size: .58rem; }
+  .shift-calendar .employee-column {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    width: 218px;
+    min-width: 218px;
+    max-width: 218px;
+    padding: 3px 8px;
+    overflow: hidden;
+    text-align: left;
+    background: #fff;
+    box-shadow: 4px 0 8px -7px rgba(15, 23, 42, .6);
+  }
+  .shift-calendar thead .employee-column {
+    z-index: 6;
+    background: #f8fafc;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+  .employee-name {
+    overflow: hidden;
+    font-size: .78rem;
+    font-weight: 650;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .employee-meta {
+    display: flex;
+    gap: .25rem;
+    align-items: center;
+    overflow: hidden;
+    margin-top: 2px;
+    color: #64748b;
+    font-size: .61rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .employee-meta-text { overflow: hidden; text-overflow: ellipsis; }
+  .schedule-badge {
+    flex: 0 0 auto;
+    padding: .16rem .28rem;
+    border-radius: .35rem;
+    font-size: .55rem;
+    font-weight: 700;
+  }
+  .shift-cell {
+    display: block;
+    width: var(--day-width);
+    height: 35px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    color: #94a3b8;
+    font-size: .73rem;
+    font-weight: 750;
+    line-height: 35px;
+    touch-action: pan-x pan-y;
+  }
+  .shift-cell:hover:not(:disabled) { box-shadow: inset 0 0 0 2px #0d6efd; }
+  .shift-cell.selected { box-shadow: inset 0 0 0 2px #0d6efd; background-image: linear-gradient(rgba(13, 110, 253, .1), rgba(13, 110, 253, .1)); }
+  .shift-cell.locked { background: #f6f7f9; color: #d1d5db; cursor: not-allowed; }
+  .shift-work { background-color: #dbeafe; color: #1d4ed8; }
+  .shift-night { background-color: #312e81; color: #fff; }
+  .shift-day-off { background-color: #f1f5f9; color: #475569; }
+  .shift-vacation { background-color: #dcfce7; color: #15803d; }
+  .shift-sick { background-color: #fee2e2; color: #b91c1c; }
+  .shift-service { background-color: #fef3c7; color: #a16207; }
+  .shift-personal { background-color: #f3e8ff; color: #7e22ce; }
+  .shift-type-picker .btn { min-height: 2.6rem; font-weight: 650; }
+  .shift-type-picker .btn.active { color: #fff; background: #0d6efd; border-color: #0d6efd; }
+  .calendar-legend { display: flex; flex-wrap: wrap; gap: .55rem; font-size: .68rem; color: #64748b; }
+  .legend-dot { display: inline-block; width: .65rem; height: .65rem; margin-right: .15rem; border-radius: .2rem; vertical-align: -.05rem; }
+  @media (max-width: 767.98px) {
+    .shift-calendar-wrap { max-height: calc(100vh - 300px); }
+    .shift-calendar .employee-column { width: 154px; min-width: 154px; max-width: 154px; }
+    .schedule-toolbar { position: static; }
+    .schedule-metrics { width: 100%; }
+  }
+</style>
+{% endblock %}
+{% block portal_content %}
+<div class="schedule-page">
+  <header class="schedule-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <h1>Календарь графика сотрудников</h1>
+      <div class="small text-secondary">{{ selected_month|date:"F Y" }} · {{ store.name }}</div>
+    </div>
+    <nav class="btn-group btn-group-sm" aria-label="Навигация по месяцам">
+      <a class="btn btn-outline-secondary" title="Предыдущий месяц" href="?month={{ previous_month|date:'Y-m' }}&department={{ selected_department }}&status={{ selected_status }}">←</a>
+      <a class="btn btn-outline-secondary" href="?month={% now 'Y-m' %}">Сегодня</a>
+      <a class="btn btn-outline-secondary" title="Следующий месяц" href="?month={{ next_month|date:'Y-m' }}&department={{ selected_department }}&status={{ selected_status }}">→</a>
+    </nav>
+  </header>
+
+  <section class="card schedule-toolbar">
+    <div class="d-flex flex-wrap align-items-center gap-1">
+      <button type="button" class="btn btn-sm btn-primary" id="add-shift-button" {% if not can_edit_month or not rows %}disabled{% endif %}>+ Добавить смену</button>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="fill-range-button" disabled>Заполнить диапазон</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#copy-week-modal" {% if not can_edit_month %}disabled{% endif %}>Копировать неделю</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#shift-templates-modal">Шаблоны</button>
+      <button type="button" class="btn btn-sm btn-light d-none" id="clear-selection">Снять выделение</button>
+
+      <div class="selection-summary small text-secondary ms-1" id="selection-summary">Ячейки не выбраны</div>
+
+      <div class="schedule-metrics d-flex align-items-center gap-2 ms-lg-auto">
+        <span>Заполнено <strong id="calendar-completion">{{ completion.completion_percent }}%</strong></span>
+        <div class="progress schedule-progress" title="Заполнение графика"><div id="calendar-completion-bar" class="progress-bar" style="width: {{ completion.completion_percent }}%"></div></div>
+        <span>с пропусками: <strong id="calendar-incomplete">{{ employees_without_schedule }}</strong></span>
+      </div>
+    </div>
+
+    <div class="d-flex flex-wrap align-items-center gap-1 mt-2 pt-2 border-top">
+      <form method="get" class="d-flex flex-wrap gap-1">
+        <input type="hidden" name="month" value="{{ selected_month|date:'Y-m' }}">
+        <select class="form-select form-select-sm w-auto" name="department" aria-label="Подразделение">
+          <option value="">Все сотрудники</option>
+          {% for value,label in department_choices %}<option value="{{ value }}" {% if selected_department == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <select class="form-select form-select-sm w-auto" name="status" aria-label="Заполнение графика">
+          <option value="">Любой статус</option>
+          <option value="filled" {% if selected_status == 'filled' %}selected{% endif %}>График заполнен</option>
+          <option value="missing" {% if selected_status == 'missing' %}selected{% endif %}>Есть пропуски</option>
+        </select>
+        <button class="btn btn-sm btn-light">Фильтр</button>
+      </form>
+      <span id="calendar-status" class="small text-secondary ms-md-auto" role="status" aria-live="polite">Кликните ячейку или протяните диапазон мышью.</span>
+    </div>
+  </section>
+
+  <section class="card shift-calendar-card">
+    <div class="shift-calendar-wrap">
+      <table class="shift-calendar" id="shift-calendar"
+        data-update-url="{% url 'checklists:director_shift_calendar_update' %}"
+        data-copy-url="{% url 'checklists:director_shift_calendar_copy_week' %}"
+        data-month="{{ selected_month|date:'Y-m' }}">
+        <thead>
+          <tr>
+            <th class="employee-column">Сотрудник</th>
+            {% for day in month_days %}<th><div>{{ day|date:"j" }}</div><small class="text-secondary">{{ day|date:"D" }}</small></th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+          <tr data-employee-row="{{ row.employee.pk }}">
+            <th class="employee-column">
+              <div class="employee-name" title="{{ row.employee.display_name }}">{{ row.employee.display_name }}</div>
+              <div class="employee-meta">
+                <span class="employee-meta-text">{% if row.employee.position %}{{ row.employee.position }} · {% endif %}{{ row.employee.get_department_display }}</span>
+                {% if row.is_complete %}<span class="schedule-badge bg-success-subtle text-success-emphasis">заполнен</span>{% else %}<span class="schedule-badge bg-warning-subtle text-warning-emphasis">есть пропуски</span>{% endif %}
+              </div>
+            </th>
+            {% for cell in row.cells %}
+            <td>
+              <button type="button"
+                class="shift-cell{% if cell.assignment %} shift-{{ cell.assignment.css }}{% endif %}{% if not cell.editable %} locked{% endif %}"
+                data-shift-cell
+                data-employee-id="{{ row.employee.pk }}"
+                data-employee-name="{{ row.employee.display_name }}"
+                data-date="{{ cell.date|date:'Y-m-d' }}"
+                data-shift-type="{{ cell.assignment.shift_type|default:'' }}"
+                data-comment="{{ cell.assignment.comment|default:'' }}"
+                data-assignment-id="{{ cell.assignment.id|default:'' }}"
+                title="{% if cell.assignment %}{{ cell.assignment.label }}{% if cell.assignment.shift_start %}, {{ cell.assignment.shift_start }}–{{ cell.assignment.shift_end }}{% endif %}{% else %}Добавить смену{% endif %}"
+                {% if not cell.editable %}disabled{% endif %}>{{ cell.assignment.short|default:"·" }}</button>
+            </td>
+            {% endfor %}
+          </tr>
+        {% empty %}
+          <tr><td class="employee-column">Сотрудники не найдены</td><td colspan="{{ month_days|length }}"></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="calendar-legend mt-2">
+    {% for item in shift_types %}<span><i class="legend-dot shift-{{ item.css }}"></i>{{ item.short }} — {{ item.label }}</span>{% endfor %}
+  </div>
+</div>
+
+<div class="modal fade" id="shift-editor-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h2 class="modal-title h5 mb-0" id="shift-editor-title">Добавить смену</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cell-editor-summary" class="rounded bg-light p-2 mb-3">
+          <div><strong id="editor-employee-name"></strong></div>
+          <div class="small text-secondary" id="editor-date-label"></div>
+          <div class="mt-2 d-none" id="cell-editor-date-field">
+            <label class="form-label small mb-1" for="editor-date">Дата</label>
+            <input id="editor-date" class="form-control form-control-sm" type="date" min="{{ default_shift_date|date:'Y-m-d' }}" max="{{ month_end|date:'Y-m-d' }}">
+          </div>
+        </div>
+        <div id="manual-editor-fields" class="row g-2 mb-3 d-none">
+          <div class="col-7">
+            <label class="form-label small mb-1" for="manual-employee">Сотрудник</label>
+            <select id="manual-employee" class="form-select">
+              {% for row in rows %}<option value="{{ row.employee.pk }}">{{ row.employee.display_name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-5">
+            <label class="form-label small mb-1" for="manual-date">Дата</label>
+            <input id="manual-date" class="form-control" type="date" value="{{ default_shift_date|date:'Y-m-d' }}" min="{{ default_shift_date|date:'Y-m-d' }}" max="{{ month_end|date:'Y-m-d' }}">
+          </div>
+        </div>
+        <label class="form-label fw-semibold">Тип смены</label>
+        <div class="row g-2 shift-type-picker mb-3">
+          {% for item in shift_types %}
+          <div class="col-6 col-sm-3"><button type="button" class="btn btn-outline-secondary w-100" data-editor-type="{{ item.value }}">{{ item.short }} · {{ item.label }}</button></div>
+          {% endfor %}
+        </div>
+        {% if templates %}
+        <div class="mb-3">
+          <div class="small text-secondary mb-1">Быстрый шаблон</div>
+          <div class="d-flex flex-wrap gap-1">
+            {% for template in templates %}<button type="button" class="btn btn-sm btn-outline-primary" data-editor-template="{{ template.pk }}" data-template-type="{{ template.shift_type }}">{{ template.name }}{% if template.shift_start %} · {{ template.shift_start|time:"H:i" }}–{{ template.shift_end|time:"H:i" }}{% endif %}</button>{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        <label class="form-label fw-semibold" for="shift-comment">Комментарий</label>
+        <textarea id="shift-comment" class="form-control" rows="3" maxlength="2000" placeholder="Необязательно"></textarea>
+        <div class="invalid-feedback d-block d-none" id="shift-editor-error"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-outline-danger me-auto d-none" id="delete-shift-button">Удалить</button>
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Отмена</button>
+        <button type="button" class="btn btn-primary" id="save-shift-button">Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="copy-week-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h2 class="modal-title h5 mb-0">Копировать неделю</h2><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label" for="copy-week-start">Исходная неделя</label>
+        <select class="form-select mb-3" id="copy-week-start">{% for week in weeks %}<option value="{{ week|date:'Y-m-d' }}">Неделя с {{ week|date:"d.m" }}</option>{% endfor %}</select>
+        <label class="form-label" for="copy-week-employee">Сотрудник</label>
+        <select class="form-select" id="copy-week-employee"><option value="all">Все сотрудники</option>{% for employee in all_employees %}<option value="{{ employee.pk }}">{{ employee.display_name }}</option>{% endfor %}</select>
+        <p class="small text-secondary mt-2 mb-0">Понедельник–воскресенье повторятся по всему месяцу. Прошедшие даты останутся без изменений.</p>
+      </div>
+      <div class="modal-footer py-2"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Отмена</button><button type="button" class="btn btn-primary" id="copy-week-button">Копировать</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="shift-templates-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h2 class="modal-title h5 mb-0">Шаблоны смен</h2><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="template_create">{{ template_form.as_p }}<button class="btn btn-primary">Добавить шаблон</button></form>
+        <hr>
+        {% for template in templates %}
+        <div class="d-flex justify-content-between align-items-center border-top py-2">
+          <div><strong>{{ template.name }}</strong><div class="small text-secondary">{{ template.get_shift_type_display }}{% if template.shift_start %} · {{ template.shift_start|time:"H:i" }}–{{ template.shift_end|time:"H:i" }}{% endif %}</div></div>
+          <form method="post" action="{% url 'checklists:director_shift_template_delete' template.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Удалить</button></form>
+        </div>
+        {% empty %}<div class="text-secondary">Шаблонов нет.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<form class="d-none">{% csrf_token %}<input id="shift-calendar-csrf" value="{{ csrf_token }}"></form>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{% static 'checklists/shift_calendar.js' %}?v=20260719-5"></script>
+{% endblock %}

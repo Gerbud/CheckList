@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Мой график{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-1">Мой график</h1>
+    <p class="text-secondary mb-0">{{ selected_month|date:"F Y" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="?month={{ previous_month|date:'Y-m' }}">←</a>
+    <a class="btn btn-outline-secondary" href="?month={{ next_month|date:'Y-m' }}">→</a>
+  </div>
+</div>
+{% if not employees %}
+  <div class="alert alert-warning">Учётная запись пока не связана с карточкой сотрудника.</div>
+{% endif %}
+<div class="row g-3">
+  {% for day in days %}
+    {% if day.assignments %}
+      <div class="col-12 col-md-6 col-xl-4">
+        <article class="card p-3 h-100">
+          <strong>{{ day.date|date:"D, d.m.Y" }}</strong>
+          {% for assignment in day.assignments %}
+            <div class="border-top mt-2 pt-2">
+              <div>{{ assignment.store.name }}</div>
+              <div class="h5 mb-1">{{ assignment.short_code }} · {{ assignment.get_shift_type_display }}</div>
+              {% if assignment.shift_start %}<div>{{ assignment.shift_start|time:"H:i" }}–{{ assignment.shift_end|time:"H:i" }}</div>{% endif %}
+              {% if assignment.comment %}<div class="small text-secondary">{{ assignment.comment }}</div>{% endif %}
+              {% if assignment.is_responsible_for_checklist %}<span class="badge text-bg-primary">Ответственный за чек-лист</span>{% endif %}
+            </div>
+          {% endfor %}
+        </article>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% if employees and not has_assignments %}
+  <div class="alert alert-secondary">На выбранный месяц смен нет.</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,45 @@
+{% if store %}
+<section class="card p-3 mb-3 border-start border-primary border-4" aria-label="Выбранный магазин">
+    <div class="row g-3 align-items-end">
+        <div class="{% if telegram_is_system_admin %}col-lg-7{% else %}col-12{% endif %}">
+            <div class="small text-uppercase text-secondary fw-semibold">
+                {% if telegram_is_system_admin %}Telegram-настройки магазина{% else %}Telegram для вашего магазина{% endif %}
+            </div>
+            <div class="h4 mb-1">{{ store.name }}</div>
+            <div class="small text-secondary">
+                Код: <code>{{ store.code }}</code>
+                · {% if store.is_active %}<span class="text-success">активен</span>{% else %}<span class="text-danger">отключён</span>{% endif %}
+            </div>
+            {% if not telegram_is_system_admin %}
+                <div class="small text-secondary mt-1">Настройки применяются только к этому магазину.</div>
+            {% endif %}
+        </div>
+        {% if telegram_is_system_admin %}
+        <div class="col-lg-5">
+            <form method="post" action="{% url 'checklists:system_select_managed_store' %}" class="row g-2">
+                {% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}">
+                <div class="col-8">
+                    <label class="form-label small" for="telegram-store">Сменить магазин</label>
+                    <select class="form-select" id="telegram-store" name="store">
+                        {% for option in telegram_stores %}
+                            <option value="{{ option.pk }}" {% if selected_store_obj.pk == option.pk %}selected{% endif %}>{{ option.name }} ({{ option.code }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-4 d-flex align-items-end">
+                    <button class="btn btn-outline-primary w-100">Выбрать</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% if telegram_store_summary %}
+    <div class="row g-2 mt-2 small">
+        <div class="col-6 col-xl-3"><div class="bg-light rounded p-2">📝 Активные шаблоны: <strong>{{ telegram_store_summary.active_templates }}</strong></div></div>
+        <div class="col-6 col-xl-3"><div class="bg-light rounded p-2">💬 Активные чаты: <strong>{{ telegram_store_summary.active_chats }}</strong></div></div>
+        <div class="col-6 col-xl-3"><div class="bg-light rounded p-2">⏳ В очереди: <strong>{{ telegram_store_summary.pending_messages }}</strong></div></div>
+        <div class="col-6 col-xl-3"><div class="bg-light rounded p-2">⚠ Ошибки: <strong>{{ telegram_store_summary.failed_messages }}</strong></div></div>
+    </div>
+    {% endif %}
+</section>
+{% endif %}

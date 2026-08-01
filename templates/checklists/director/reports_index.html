@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Отчёты{% endblock %}
+{% block portal_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div><h1 class="h3 mb-1">Отчёты · {{ store.name }}</h1><p class="text-secondary mb-0">Период {{ period.label }} · сформировано {{ generated_at|date:"d.m.Y H:i" }}</p></div>
+  <a class="btn btn-outline-primary" href="{% url 'checklists:director_report_problems' %}?date_from={{ period.date_from|date:'Y-m-d' }}&date_to={{ period.date_to|date:'Y-m-d' }}">Все проблемы</a>
+</div>
+{% include "checklists/director/_report_period_filter.html" %}
+<section class="card p-3 mb-3 health-{{ health.code }}" aria-labelledby="health-title">
+  <h2 id="health-title" class="h4">Состояние магазина: {{ health.label }}</h2>
+  {% if health.reasons %}<p class="mb-1">{{ health.label }}, потому что:</p><ul class="mb-0">{% for reason in health.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% else %}<p class="mb-0">Обязательные пункты выполнены, критических нарушений за период не обнаружено.</p>{% endif %}
+</section>
+{% if health.problems %}
+<section class="mb-4" aria-labelledby="attention-title">
+  <h2 id="attention-title" class="h4">Что требует внимания</h2>
+  <div class="row g-2">{% for problem in health.problems|slice:":8" %}
+    <div class="col-12 col-lg-6"><a class="card p-3 text-decoration-none text-reset problem-card {% if problem.severity == 'critical' %}critical{% endif %}" href="{% url 'checklists:director_report_problems' %}?problem_type={{ problem.type }}&date_from={{ period.date_from|date:'Y-m-d' }}&date_to={{ period.date_to|date:'Y-m-d' }}"><strong>{% if problem.severity == 'critical' %}⛔ Критично{% else %}⚠ Требует внимания{% endif %}: {{ problem.title }}</strong><span>{{ problem.date|date:"d.m.Y" }} · {{ problem.detail }}</span></a></div>
+  {% endfor %}</div>
+</section>
+{% endif %}
+<section class="mb-4" aria-labelledby="metrics-title"><h2 id="metrics-title" class="h4">Сводные показатели</h2><div class="row g-3">
+{% for card in cards %}<div class="col-6 col-xl-4"><a class="card report-card p-3 text-decoration-none text-reset health-{{ card.state }}" href="{% if card.code == 'overdue_tasks' or card.code == 'active_tasks' %}{% url 'checklists:director_report_tasks' %}{% elif card.code == 'problem_employees' %}{% url 'checklists:director_report_employees' %}?only_problems=1{% elif card.code == 'revisions' %}{% url 'checklists:director_report_revisions' %}{% else %}{% url 'checklists:director_report_daily' %}{% endif %}"><span class="small text-secondary">{{ card.label }}</span><strong class="display-6">{{ card.value }}</strong><span class="small">{{ card.state_label }} · {{ card.comparison.label }}</span></a></div>{% endfor %}
+</div></section>
+<section class="card p-3 mb-4"><h2 class="h4">Динамика выполнения по дням</h2>
+{% if trend %}<div class="report-chart" role="img" aria-label="Процент выполнения по дням">{% for day in trend %}<div class="report-bar"><div class="small">{{ day.completion }}%</div><div class="report-bar-fill" style="height: {{ day.completion }}px"></div><small>{{ day.date|date:"d.m" }}</small></div>{% endfor %}</div>
+<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Дата</th><th>Выполнение</th><th>Failed</th><th>Поздние этапы</th></tr></thead><tbody>{% for day in trend %}<tr><td>{{ day.date|date:"d.m.Y" }}</td><td>{{ day.completion }}%</td><td>{{ day.failed }}</td><td>{{ day.late }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="mb-0">За выбранный период ещё нет чек-листов. После заполнения здесь появится динамика.</p>{% endif %}
+</section>
+<div class="row g-3">
+<div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_daily' %}"><h2 class="h5">Ежедневный отчёт</h2><span>Этапы, ответы, задачи и уведомления</span></a></div>
+<div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_employees' %}"><h2 class="h5">Сотрудники</h2><span>Участие, нарушения и карточки сотрудников</span></a></div>
+<div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_tasks' %}"><h2 class="h5">Задачи</h2><span>Выполнение и просрочки web/Telegram</span></a></div>
+<div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_revisions' %}"><h2 class="h5">Изменения ответов</h2><span>Причины и изменения после дедлайна</span></a></div>
+<div class="col-md-4"><a class="card p-4 text-decoration-none h-100" href="{% url 'checklists:director_report_recurring' %}"><h2 class="h5">Повторяющиеся проблемы</h2><span>Частые failed, пропуски и просрочки</span></a></div>
+</div>
+{% endblock %}

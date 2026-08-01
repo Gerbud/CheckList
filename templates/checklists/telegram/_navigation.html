@@ -1,0 +1,7 @@
+<nav class="telegram-tabs mb-3" aria-label="Разделы Telegram">
+    <a class="telegram-tab{% if telegram_active_tab == 'summary' %} active{% endif %}" {% if telegram_active_tab == 'summary' %}aria-current="page"{% endif %} href="{% url 'checklists:telegram_settings' %}">⌂ Сводка</a>
+    <a class="telegram-tab{% if telegram_active_tab == 'templates' %} active{% endif %}" {% if telegram_active_tab == 'templates' %}aria-current="page"{% endif %} href="{% url 'checklists:telegram_templates' %}">✎ Шаблоны</a>
+    {% if telegram_is_system_admin %}<a class="telegram-tab{% if telegram_active_tab == 'users' %} active{% endif %}" {% if telegram_active_tab == 'users' %}aria-current="page"{% endif %} href="{% url 'checklists:telegram_users' %}">♙ Привязки</a>{% endif %}
+    <a class="telegram-tab{% if telegram_active_tab == 'chats' %} active{% endif %}" {% if telegram_active_tab == 'chats' %}aria-current="page"{% endif %} href="{% url 'checklists:telegram_chats' %}">◉ Чаты и Topics</a>
+    <a class="telegram-tab{% if telegram_active_tab == 'queue' %} active{% endif %}" {% if telegram_active_tab == 'queue' %}aria-current="page"{% endif %} href="{% url 'checklists:telegram_queue' %}">✉ Telegram сообщения</a>
+</nav>

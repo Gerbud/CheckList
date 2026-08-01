@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ title }}{% endblock %}
+{% block extra_head %}
+<style>
+    .telegram-editor { display: grid; gap: 1rem; }
+    .variable-button { text-align: left; min-height: 4.25rem; white-space: normal; }
+    .telegram-preview { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 12rem; }
+    @media (min-width: 992px) {
+        .telegram-editor { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); align-items: start; }
+        .telegram-preview-column { position: sticky; top: 1rem; }
+    }
+</style>
+{% endblock %}
+{% block portal_content %}
+{% include "checklists/telegram/_nav.html" %}
+<div class="telegram-editor">
+    <section class="card p-3">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+            <div>
+                <h1 class="h3 mb-1">{{ title }}</h1>
+                <div class="text-secondary">{{ telegram_event.title }} · <code>{{ telegram_event.code }}</code></div>
+                <p class="small text-secondary mb-0">{{ telegram_event.description }}</p>
+            </div>
+            {% if template_obj %}<span class="badge {% if template_obj.is_enabled %}text-bg-success{% else %}text-bg-secondary{% endif %} align-self-start">{{ template_obj.is_enabled|yesno:"Включён,Выключен" }}</span>{% endif %}
+        </div>
+
+        <form method="post"
+              id="telegram-template-form"
+              data-preview-url="{% if template_obj %}{% url 'checklists:telegram_template_preview' template_obj.pk %}{% else %}{% url 'checklists:telegram_template_preview_create' %}{% endif %}"
+              {% if not template_obj %}data-create-url="{% url 'checklists:telegram_template_create' %}"{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="selected_store" value="{{ store.pk }}">
+            {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+            {% if form.event_code %}
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.event_code.id_for_label }}">{{ form.event_code.label }}</label>
+                {{ form.event_code }}
+                {% for error in form.event_code.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                <div class="form-text">Для магазина можно создать только один шаблон каждого события.</div>
+            </div>
+            {% endif %}
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+                {{ form.name }}
+                {% for error in form.name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+                {{ form.title }}
+                {% for error in form.title.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.body.id_for_label }}">{{ form.body.label }}</label>
+                {{ form.body }}
+                {% for error in form.body.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="{{ form.parse_mode.id_for_label }}">{{ form.parse_mode.label }}</label>
+                {{ form.parse_mode }}
+                {% for error in form.parse_mode.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <fieldset class="mb-3">
+                <legend class="h6">Получатели</legend>
+                <div class="form-check mb-2">{{ form.send_to_group }} <label class="form-check-label" for="{{ form.send_to_group.id_for_label }}">{{ form.send_to_group.label }}</label></div>
+                <div class="form-check mb-2">{{ form.send_to_private }} <label class="form-check-label" for="{{ form.send_to_private.id_for_label }}">{{ form.send_to_private.label }}</label></div>
+            </fieldset>
+            <div class="form-check mb-3">{{ form.is_enabled }} <label class="form-check-label" for="{{ form.is_enabled.id_for_label }}">{{ form.is_enabled.label }}</label></div>
+
+            <section class="border rounded p-3 mb-3">
+                <h2 class="h6">Переменные события</h2>
+                <p class="small text-secondary">Сначала установите курсор в заголовок или текст, затем нажмите переменную.</p>
+                <div class="row g-2">
+                    {% for variable in telegram_event.variables %}
+                    <div class="col-12 col-sm-6">
+                        <button class="btn btn-outline-secondary w-100 variable-button" type="button" data-template-token="{{ variable.token }}">
+                            <code>{{ variable.token }}</code><br>
+                            <span class="small">{{ variable.title }}</span><br>
+                            <span class="small text-secondary">{{ variable.description }} Пример: {{ variable.example }}</span>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <details class="border rounded p-3 mb-3">
+                <summary class="fw-semibold">Показать стандартный вариант</summary>
+                <pre class="text-wrap bg-light border rounded p-3 mt-3 mb-0">{{ standard_preview }}</pre>
+            </details>
+
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">Сохранить</button>
+                {% if template_obj %}
+                    <button class="btn btn-outline-success" type="submit" formaction="{% url 'checklists:telegram_template_test' template_obj.pk %}">Тестовая отправка</button>
+                    <a class="btn btn-outline-warning" href="{% url 'checklists:telegram_template_reset' template_obj.pk %}">Восстановить стандартный</a>
+                    <a class="btn btn-outline-danger" href="{% url 'checklists:telegram_template_delete' template_obj.pk %}">Удалить</a>
+                {% endif %}
+                <a class="btn btn-link" href="{% url 'checklists:telegram_templates' %}">Отмена</a>
+            </div>
+        </form>
+    </section>
+
+    <aside class="telegram-preview-column">
+        <section class="card p-3 mb-3" id="telegram-preview" aria-live="polite">
+            <div class="d-flex justify-content-between align-items-center gap-2">
+                <h2 class="h5 mb-0">Предпросмотр</h2>
+                <button class="btn btn-sm btn-outline-primary" type="button" id="telegram-preview-refresh">Обновить</button>
+            </div>
+            <div id="telegram-preview-status" class="small text-secondary mb-2">Обновляется автоматически</div>
+            <div id="telegram-preview-content" class="telegram-preview bg-light border rounded p-3"></div>
+        </section>
+        {% if template_obj %}
+        <section class="card p-3" id="test-destinations">
+            <h2 class="h6">Тестовые получатели</h2>
+            <p class="small text-secondary">Тест использует текущие значения формы, даже если они ещё не сохранены.</p>
+            <ul class="small ps-3 mb-0">
+                {% for destination in destinations %}<li>{{ destination.label }}</li>{% empty %}<li class="text-danger">Активных получателей нет.</li>{% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{% static 'checklists/telegram_template_editor.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ task.text }}{% endblock %}
+{% block portal_content %}
+<section class="card p-3 mb-3">
+<div class="d-flex flex-wrap justify-content-between gap-2"><div><h1 class="h3">{{ task.text }}</h1><p class="text-secondary">{{ task.date|date:"d.m.Y" }} · {{ task.get_section_code_display }} · {{ task.get_status_display }}</p></div>
+<div class="d-flex flex-wrap gap-2 align-self-start">{% if can_manage_task and task.status == 'planned' or can_manage_task and task.status == 'active' %}<a class="btn btn-primary" href="{% url 'checklists:director_task_edit' task.pk %}">Изменить</a><form method="post" action="{% url 'checklists:director_task_cancel' task.pk %}">{% csrf_token %}<button class="btn btn-danger">Отменить</button></form>{% endif %}{% if can_delete_task %}<a class="btn btn-outline-danger" href="{% url 'checklists:director_task_delete' task.pk %}">Удалить</a>{% endif %}</div></div>
+<p>{{ task.description|default:"Описание не задано." }}</p>
+<dl class="row"><dt class="col-sm-3">Источник</dt><dd class="col-sm-9">{{ task.get_source_display }}</dd><dt class="col-sm-3">Обязательная</dt><dd class="col-sm-9">{{ task.is_required|yesno:"да,нет" }}</dd><dt class="col-sm-3">Создал</dt><dd class="col-sm-9">{% if task.created_by %}{% firstof task.created_by.get_full_name task.created_by.get_username %}{% elif task.created_by_telegram_binding %}{{ task.created_by_telegram_binding.username|default:task.created_by_telegram_binding.telegram_user_id }}{% else %}—{% endif %}</dd><dt class="col-sm-3">Выполнил</dt><dd class="col-sm-9">{{ task.completed_by_employee.display_name|default:"—" }}</dd><dt class="col-sm-3">Комментарий</dt><dd class="col-sm-9">{{ task.completion_comment|default:"—" }}</dd></dl>
+{% if task.daily_checklist %}<a href="{% url 'checklists:director_checklist_detail' task.daily_checklist.pk %}">Перейти к связанному чек-листу</a>{% endif %}
+</section>
+<section class="card p-3"><h2 class="h5">История</h2>{% for item in history %}<div class="border-top py-2">{{ item.get_action_display }} · {{ item.actor.get_username|default:"система" }} · {{ item.created_at|date:"d.m.Y H:i" }}</div>{% empty %}<p>История пуста.</p>{% endfor %}</section>
+{% endblock %}
