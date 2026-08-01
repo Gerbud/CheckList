@@ -1002,7 +1002,7 @@ def test_missing_pinel_category_is_created_automatically(
     assert '>Greenworks G24SL200</div>' in content
     assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
     assert 'class="price-tag-voltage series-24"' in content
-    assert '<strong>24V</strong><span>серия</span>' in content
+    assert '<span>серия</span><strong>24V</strong>' in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
     assert 'class="price-tag-warranty"' in content
