@@ -18,6 +18,18 @@ class ProductImportError(Exception):
     pass
 
 
+def format_product_price(price, currency='RUB'):
+    if not price:
+        return 'Цена не указана'
+    try:
+        value = Decimal(str(price).replace(' ', '').replace(',', '.'))
+        number = f'{value:,.0f}'.replace(',', ' ')
+    except (InvalidOperation, ValueError):
+        number = str(price)
+    suffix = '₽' if str(currency).upper() in {'RUB', 'RUR', '₽'} else currency
+    return f'{number} {suffix}'.strip()
+
+
 @dataclass
 class ImportedProduct:
     url: str
@@ -40,18 +52,25 @@ class ImportedProduct:
     source_h1: str = ''
     original_name: str = ''
     suggested_name: str = ''
+    price_variants: list = field(default_factory=list)
 
     @property
     def formatted_price(self):
-        if not self.price:
-            return 'Цена не указана'
-        try:
-            value = Decimal(str(self.price).replace(' ', '').replace(',', '.'))
-            number = f'{value:,.0f}'.replace(',', ' ')
-        except (InvalidOperation, ValueError):
-            number = str(self.price)
-        suffix = '₽' if self.currency.upper() in {'RUB', 'RUR', '₽'} else self.currency
-        return f'{number} {suffix}'.strip()
+        return format_product_price(self.price, self.currency)
+
+    @property
+    def formatted_price_variants(self):
+        return [
+            {
+                'label': item['label'],
+                'price': format_product_price(
+                    item.get('price', ''), item.get('currency', self.currency),
+                ),
+                'is_current': item.get('url') == self.url,
+            }
+            for item in self.price_variants[:5]
+            if item.get('label') and item.get('price')
+        ]
 
     @property
     def prominent_name(self):
@@ -344,6 +363,76 @@ def _first_offer(value):
     if isinstance(offers, list):
         return offers[0] if offers else {}
     return offers if isinstance(offers, dict) else {}
+
+
+def _pinel_equipment_links(html, base_url):
+    """Read PINEL's visible equipment selector in the same order as the page."""
+    block_match = re.search(
+        r'<div[^>]+class=["\'][^"\']*\bequipments_list\b[^"\']*["\'][^>]*>'
+        r'(?P<body>.*?)</div>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not block_match:
+        return []
+    links = []
+    for anchor in re.finditer(
+        r'<a\b(?P<attrs>[^>]*)>(?P<text>.*?)</a>',
+        block_match.group('body'),
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        attrs = anchor.group('attrs')
+        href_match = re.search(r'\bhref=["\']([^"\']+)', attrs, re.IGNORECASE)
+        title_match = re.search(r'\btitle=["\']([^"\']+)', attrs, re.IGNORECASE)
+        label = title_match.group(1) if title_match else re.sub(
+            r'<[^>]+>', '', anchor.group('text'),
+        )
+        label = re.sub(r'\s+', ' ', label).strip()
+        if href_match and label:
+            links.append((label, parse.urljoin(base_url, href_match.group(1))))
+    return links[:5]
+
+
+def _offer_from_html(html):
+    parser = _ProductHTMLParser()
+    parser.feed(html)
+    candidates = [
+        item for document in parser.json_ld
+        for item in _walk_json(document) if _is_product(item)
+    ]
+    offer = _first_offer(candidates[0]) if candidates else {}
+    return (
+        str(offer.get('price') or offer.get('lowPrice') or '').strip(),
+        str(offer.get('priceCurrency') or 'RUB').strip(),
+    )
+
+
+def _pinel_price_variants(html, final_url, current_price, current_currency):
+    links = _pinel_equipment_links(html, final_url)
+    if len(links) < 2:
+        return []
+    current_path = parse.urlsplit(final_url).path.rstrip('/')
+    variants = []
+    for label, variant_url in links:
+        variant_path = parse.urlsplit(variant_url).path.rstrip('/')
+        if variant_path == current_path:
+            price, currency, resolved_url = (
+                current_price, current_currency, final_url,
+            )
+        else:
+            try:
+                variant_html, resolved_url = _download(variant_url)
+                price, currency = _offer_from_html(variant_html)
+            except ProductImportError:
+                continue
+        if price:
+            variants.append({
+                'label': label,
+                'price': price,
+                'currency': currency,
+                'url': resolved_url,
+            })
+    return variants
 
 
 def _absolute_url(value, base_url):
@@ -668,7 +757,7 @@ def import_product(url):
     brand, model, product_type, category = _product_identity(
         product, name, properties, meta,
     )
-    return ImportedProduct(
+    imported = ImportedProduct(
         url=final_url,
         name=name,
         price=str(price).strip(),
@@ -683,3 +772,9 @@ def import_product(url):
         category_name=category,
         source_h1=source_h1,
     )
+    hostname = (parse.urlsplit(final_url).hostname or '').casefold()
+    if hostname == 'pinel.ru' or hostname.endswith('.pinel.ru'):
+        imported.price_variants = _pinel_price_variants(
+            html, final_url, imported.price, imported.currency,
+        )
+    return imported

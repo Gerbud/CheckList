@@ -98,6 +98,48 @@ def test_product_is_imported_from_schema_org(monkeypatch):
     assert product.secondary_name == 'Бокс'
 
 
+def test_pinel_imports_prices_for_up_to_five_equipment_variants(monkeypatch):
+    def page(price, links=''):
+        return f'''
+            <html><head><script type="application/ld+json">
+            {{"@type":"Product","name":"Газонокосилка Greenworks",
+              "offers":{{"price":"{price}","priceCurrency":"RUB"}}}}
+            </script></head><body><h1>Газонокосилка Greenworks</h1>{links}</body></html>
+        '''
+
+    links = '''
+        <div class="equipments_list">
+          <a href="/catalog/sku/1/" title="2,5 А/ч">2,5 А/ч</a>
+          <a href="/catalog/sku/2/" title="5 А/ч" class="active">5 А/ч</a>
+          <a href="/catalog/sku/3/" title="Без аккумулятора">Без аккумулятора</a>
+        </div>
+    '''
+    pages = {
+        '/catalog/sku/1/': page('179970'),
+        '/catalog/sku/2/': page('193970', links),
+        '/catalog/sku/3/': page('149970'),
+    }
+
+    def fake_download(url):
+        from urllib.parse import urlsplit
+        path = urlsplit(url).path
+        return pages[path], f'https://www.pinel.ru{path}'
+
+    monkeypatch.setattr('checklists.price_tags._download', fake_download)
+
+    product = import_product('https://www.pinel.ru/catalog/sku/2/')
+
+    assert product.formatted_price_variants == [
+        {'label': '2,5 А/ч', 'price': '179 970 ₽', 'is_current': False},
+        {'label': '5 А/ч', 'price': '193 970 ₽', 'is_current': True},
+        {
+            'label': 'Без аккумулятора',
+            'price': '149 970 ₽',
+            'is_current': False,
+        },
+    ]
+
+
 def test_product_falls_back_to_heading_price_and_table(monkeypatch):
     html = '''
         <html><head><meta property="og:image" content="/item.jpg"></head>
@@ -656,14 +698,27 @@ def test_mixed_domains_automatically_use_their_own_profiles(
     )
 
     def fake_import(url):
-        return ImportedProduct(
+        product = ImportedProduct(
             url=url,
             name='PINEL mower' if 'pinel.test' in url else 'ES-AUTO box',
+            price='50000',
             properties=(
                 [('Тип товара', 'Газонокосилка'), ('Мощность', '2 кВт')]
                 if 'pinel.test' in url else []
             ),
         )
+        if 'pinel.test' in url:
+            product.price_variants = [
+                {
+                    'label': 'Без АКБ и ЗУ', 'price': '50000',
+                    'currency': 'RUB', 'url': url,
+                },
+                {
+                    'label': 'АКБ 5 А/ч + ЗУ', 'price': '75000',
+                    'currency': 'RUB', 'url': f'{url}?kit=5',
+                },
+            ]
+        return product
 
     monkeypatch.setattr('checklists.portal_views.import_product', fake_import)
     client.force_login(price_tag_setup['director'])
@@ -687,6 +742,9 @@ def test_mixed_domains_automatically_use_their_own_profiles(
     assert 'price-tag-layout-es_auto' in content
     assert 'price-tag-layout-pinel' in content
     assert 'PINEL · Газонокосилки PINEL' in content
+    assert 'class="price-tag-price-variants"' in content
+    assert 'Без АКБ и ЗУ' in content
+    assert '75 000 ₽' in content
     assert content.count('class="price-tag-name" contenteditable="true"') == 2
 
 
