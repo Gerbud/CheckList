@@ -2,6 +2,7 @@ import ipaddress
 import json
 import re
 import socket
+from html import unescape
 from difflib import SequenceMatcher
 from io import BytesIO
 from dataclasses import dataclass, field
@@ -97,6 +98,11 @@ class ImportedProduct:
 
     @property
     def manufacturer(self):
+        source_host = self.source_name.casefold().removeprefix('www.')
+        if self.brand and (
+            source_host == 'pinel.ru' or source_host.endswith('.pinel.ru')
+        ):
+            return self.brand
         for preferred_names in (
             {'производитель', 'производител', 'manufacturer'},
             {'бренд', 'brand'},
@@ -669,6 +675,32 @@ def _looks_like_property_name(value):
     return any(marker in normalized for marker in markers)
 
 
+def _pinel_feature_properties(html):
+    block = re.search(
+        r'<div\s+id=["\']features["\'][^>]*>(.*?)'
+        r'<div\s+id=["\']description["\']',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not block:
+        return []
+    result = []
+    for row in re.finditer(
+        r'product__content_features_name[^>]*>(?P<name>.*?)</div>\s*'
+        r'<div[^>]*class=["\'][^"\']*product__content_features_value'
+        r'[^"\']*["\'][^>]*>(?P<value>.*?)</div>',
+        block.group(1),
+        re.IGNORECASE | re.DOTALL,
+    ):
+        name = unescape(re.sub(r'<[^>]+>', '', row.group('name')))
+        value = unescape(re.sub(r'<[^>]+>', '', row.group('value')))
+        name = re.sub(r'\s+', ' ', name).strip().rstrip(':')
+        value = re.sub(r'\s+', ' ', value).strip()
+        if name and value:
+            result.append((name, value))
+    return result
+
+
 def _properties(product, parser=None):
     result = []
     values = product.get('additionalProperty') or []
@@ -966,7 +998,17 @@ def import_product(url, *, _resolve_pinel_base=True):
         product.get('image') or meta.get('og:image') or meta.get('twitter:image'),
         final_url,
     )
-    properties = _properties(product, parser)
+    hostname = (parse.urlsplit(final_url).hostname or '').casefold()
+    is_pinel = hostname == 'pinel.ru' or hostname.endswith('.pinel.ru')
+    if is_pinel:
+        properties = _properties(product)
+        seen_property_names = {name.casefold() for name, _ in properties}
+        for property_name, property_value in _pinel_feature_properties(html):
+            if property_name.casefold() not in seen_property_names:
+                properties.append((property_name, property_value))
+                seen_property_names.add(property_name.casefold())
+    else:
+        properties = _properties(product, parser)
     brand, model, product_type, category = _product_identity(
         product, name, properties, meta,
     )
@@ -985,8 +1027,7 @@ def import_product(url, *, _resolve_pinel_base=True):
         category_name=category,
         source_h1=source_h1,
     )
-    hostname = (parse.urlsplit(final_url).hostname or '').casefold()
-    if hostname == 'pinel.ru' or hostname.endswith('.pinel.ru'):
+    if is_pinel:
         if not _resolve_pinel_base:
             return imported
         imported.price_variants = _pinel_price_variants(

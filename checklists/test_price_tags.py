@@ -300,6 +300,45 @@ def test_warranty_years_are_formatted_for_price_tag():
     assert product.warranty_text == '3 года'
 
 
+def test_pinel_identity_uses_main_product_features_not_recommendations(
+    monkeypatch,
+):
+    html = '''
+      <html><head><script type="application/ld+json">
+      {"@type":"Product","name":"Газонокосилка Greenworks 40V GD40LM411",
+       "sku":"2521007","brand":{"name":"Greenworks"},
+       "offers":{"price":"22990","priceCurrency":"RUB"}}
+      </script></head><body>
+      <div>Артикул:</div><div>WX744.9</div>
+      <div>Производитель:</div><div>Worx</div>
+      <h1>Газонокосилка Greenworks 40V GD40LM411 | 2521007</h1>
+      <div id="features">
+        <div class="product__content_features_name">Артикул:</div>
+        <div class="product__content_features_value">2521007</div>
+        <div class="product__content_features_name">Производитель:</div>
+        <div class="product__content_features_value">Greenworks</div>
+        <div class="product__content_features_name">Модель:</div>
+        <div class="product__content_features_value">GD40LM411</div>
+        <div class="product__content_features_name">Вольтаж:</div>
+        <div class="product__content_features_value">40V</div>
+      </div><div id="description"></div>
+      </body></html>
+    '''
+    monkeypatch.setattr(
+        'checklists.price_tags._download',
+        lambda url: (html, 'https://pinel.ru/catalog/sku/1838/'),
+    )
+
+    product = import_product('https://pinel.ru/catalog/sku/1838/')
+
+    assert product.sku == '2521007'
+    assert product.manufacturer == 'Greenworks'
+    assert ('Артикул', '2521007') in product.properties
+    assert ('Производитель', 'Greenworks') in product.properties
+    assert ('Модель', 'GD40LM411') in product.properties
+    assert ('Производитель', 'Worx') not in product.properties
+
+
 def test_product_falls_back_to_heading_price_and_table(monkeypatch):
     html = '''
         <html><head><meta property="og:image" content="/item.jpg"></head>
@@ -962,7 +1001,7 @@ def test_missing_pinel_category_is_created_automatically(
     assert 'Не определена категория' not in content
     assert '>Greenworks G24SL200</div>' in content
     assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
-    assert '<strong>24V</strong><span>серия</span>' in content
+    assert '<strong>24V</strong><span>аккумуляторная<br>серия</span>' in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
     assert 'class="price-tag-warranty"' in content
