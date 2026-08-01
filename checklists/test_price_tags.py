@@ -289,6 +289,16 @@ def test_pinel_display_name_removes_category_and_sku():
     ) == 'Greenworks 24V G24SL200'
 
 
+def test_warranty_years_are_formatted_for_price_tag():
+    product = ImportedProduct(
+        url='https://pinel.test/product/',
+        name='Товар',
+        properties=[('Гарантия, (лет)', '3')],
+    )
+
+    assert product.warranty_text == '3 года'
+
+
 def test_product_falls_back_to_heading_price_and_table(monkeypatch):
     html = '''
         <html><head><meta property="og:image" content="/item.jpg"></head>
@@ -909,7 +919,10 @@ def test_missing_pinel_category_is_created_automatically(
         price='1990',
         sku='3502407UA',
         product_type='Фонарь',
-        properties=[('Вольтаж', '24V'), ('Модель', 'G24SL200')],
+        properties=[
+            ('Вольтаж', '24V'), ('Модель', 'G24SL200'),
+            ('Гарантия, (лет)', '3'),
+        ],
         price_variants=[
             {
                 'label': 'Без АКБ и ЗУ', 'price': '1490',
@@ -937,13 +950,20 @@ def test_missing_pinel_category_is_created_automatically(
         name='Фонарь',
     )
     assert response.status_code == 200
-    assert category.property_name_list == ['Вольтаж', 'Модель']
-    assert category.available_property_names == ['Вольтаж', 'Модель']
+    assert category.property_name_list == [
+        'Вольтаж', 'Модель', 'Гарантия, (лет)',
+    ]
+    assert category.available_property_names == [
+        'Вольтаж', 'Модель', 'Гарантия, (лет)',
+    ]
     assert 'Не определена категория' not in content
     assert 'Greenworks 24V G24SL200' in content
     assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
+    assert 'class="price-tag-warranty"' in content
+    assert '3 года' in content
+    assert 'Магазин и сервис — в одном месте' in content
 
 
 def test_seo_product_name_is_cleaned_without_losing_variant():

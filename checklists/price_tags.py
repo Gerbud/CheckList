@@ -108,6 +108,37 @@ class ImportedProduct:
         return self.brand
 
     @property
+    def warranty_text(self):
+        preferred = []
+        fallback = []
+        for name, value in self.properties:
+            normalized = name.casefold().strip().rstrip(':')
+            if 'гарант' not in normalized:
+                continue
+            if any(marker in normalized for marker in ('акб', 'батар')):
+                fallback.append(value)
+            else:
+                preferred.append(value)
+        value = str((preferred or fallback or [''])[0]).strip()
+        if not value:
+            return ''
+        years = re.fullmatch(r'(\d+)(?:[.,]0+)?', value)
+        if not years:
+            return value
+        number = int(years.group(1))
+        remainder_100 = number % 100
+        remainder_10 = number % 10
+        if 11 <= remainder_100 <= 14:
+            unit = 'лет'
+        elif remainder_10 == 1:
+            unit = 'год'
+        elif 2 <= remainder_10 <= 4:
+            unit = 'года'
+        else:
+            unit = 'лет'
+        return f'{number} {unit}'
+
+    @property
     def qr_url(self):
         return self.tracking_url or self.url
 
