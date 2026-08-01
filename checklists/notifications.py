@@ -67,6 +67,9 @@ def _delivery_settings(stage, notification_type):
         ChecklistNotification.NotificationType.COMPLETED_LATE: (
             'completed_late_enabled'
         ),
+        ChecklistNotification.NotificationType.COMPLETED_WITH_ISSUES: (
+            'completed_late_enabled'
+        ),
     }[notification_type]
     if not getattr(notification_settings, enabled_field):
         return None
@@ -165,6 +168,34 @@ def create_completed_late_notification(stage):
     return notification
 
 
+def create_completed_with_issues_notification(stage):
+    stage = DailyChecklistStage.objects.select_related(
+        'daily_checklist__store__checklist_schedule',
+        'daily_checklist__store__notification_settings',
+    ).get(pk=stage.pk)
+    notification_type = (
+        ChecklistNotification.NotificationType.COMPLETED_WITH_ISSUES
+    )
+    has_failed_answers = ChecklistAnswer.objects.filter(
+        daily_item__daily_checklist=stage.daily_checklist,
+        daily_item__section_code=stage.section_code,
+        status=ChecklistAnswer.Status.FAILED,
+    ).exists()
+    if (
+        stage.status not in FINAL_STAGE_STATUSES
+        or stage.completed_at is None
+        or not has_failed_answers
+        or _delivery_settings(stage, notification_type) is None
+    ):
+        return None
+    notification, _ = ChecklistNotification.objects.get_or_create(
+        stage=stage,
+        notification_type=notification_type,
+        defaults={'scheduled_for': stage.completed_at},
+    )
+    return notification
+
+
 @transaction.atomic
 def claim_notification(notification_id, at=None):
     at = _aware_now(at)
@@ -241,6 +272,27 @@ def _stage_counts(stage):
     return len(answers) - pending_count, pending_count, len(answers)
 
 
+def _failed_answer_lines(stage):
+    answers = (
+        ChecklistAnswer.objects.filter(
+            daily_item__daily_checklist=stage.daily_checklist,
+            daily_item__section_code=stage.section_code,
+            status=ChecklistAnswer.Status.FAILED,
+        )
+        .select_related('daily_item')
+        .order_by('daily_item__display_order', 'daily_item__id')
+    )
+    lines = []
+    for answer in answers:
+        item_text = html.escape(answer.daily_item.item_text)
+        comment = html.escape((answer.comment or '').strip())
+        lines.append(
+            f'❌ <b>{item_text}</b>\n'
+            f'Комментарий: {comment or "—"}'
+        )
+    return lines
+
+
 def build_notification_text(notification):
     stage = notification.stage
     daily = stage.daily_checklist
@@ -254,6 +306,23 @@ def build_notification_text(notification):
     stage_name = html.escape(stage.get_section_code_display())
     deadline = _format_datetime(stage.deadline_at, stage)
     completed_count, pending_count, total_count = _stage_counts(stage)
+
+    if (
+        notification.notification_type
+        == ChecklistNotification.NotificationType.COMPLETED_WITH_ISSUES
+    ):
+        completed_at = stage.completed_at or notification.scheduled_for
+        problem_lines = _failed_answer_lines(stage)
+        return (
+            '🔴 <b>Этап закрыт с невыполненными пунктами</b>\n\n'
+            f'Магазин: {store_name}\n'
+            f'Сотрудник: {employee_name}\n'
+            f'Этап: {stage_name}\n'
+            f'Завершено: {_format_datetime(completed_at, stage)}\n\n'
+            + '\n\n'.join(problem_lines)
+            + '\n\n⚠️ Задачи остались невыполненными. '
+            'Возьмите их в работу на следующий день.'
+        )
 
     if notification.notification_type == ChecklistNotification.NotificationType.DEADLINE_WARNING:
         remaining = _format_duration(stage.deadline_at - notification.scheduled_for)

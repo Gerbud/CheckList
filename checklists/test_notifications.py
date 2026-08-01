@@ -146,6 +146,23 @@ def complete_opening(setup, completed_at):
     )
 
 
+def complete_opening_with_issue(setup, completed_at, comment='Осталось сделать'):
+    stage = setup['daily'].stages.get(section_code='opening')
+    answer = setup['daily'].items.get(section_code='opening').answer
+    update_answer(
+        answer,
+        ChecklistAnswer.Status.FAILED,
+        comment,
+        setup['employee'].user,
+        at=min(completed_at, at(10, 59)),
+    )
+    return complete_checklist_stage(
+        stage,
+        setup['employee'].user,
+        at=completed_at,
+    )
+
+
 def successful_urlopen(*args, **kwargs):
     return FakeResponse(b'{"ok": true, "result": {"message_id": 98765}}')
 
@@ -265,6 +282,61 @@ def test_completed_late_notification_is_created_only_once(notification_setup):
     assert first.pk == second.pk
     assert stage.notifications.filter(
         notification_type=ChecklistNotification.NotificationType.COMPLETED_LATE
+    ).count() == 1
+
+
+def test_completed_with_issues_is_created_for_on_time_stage(notification_setup):
+    stage = complete_opening_with_issue(notification_setup, at(10))
+
+    notification = stage.notifications.get(
+        notification_type=(
+            ChecklistNotification.NotificationType.COMPLETED_WITH_ISSUES
+        )
+    )
+
+    assert notification.scheduled_for == at(10)
+    assert not stage.notifications.filter(
+        notification_type=ChecklistNotification.NotificationType.COMPLETED_LATE
+    ).exists()
+
+
+def test_completed_with_issues_replaces_late_message_and_contains_comment(
+    notification_setup,
+):
+    stage = complete_opening_with_issue(
+        notification_setup,
+        at(12),
+        comment='Передать смене <срочно> & проверить',
+    )
+    notification = stage.notifications.get(
+        notification_type=(
+            ChecklistNotification.NotificationType.COMPLETED_WITH_ISSUES
+        )
+    )
+
+    text = build_notification_text(notification)
+
+    assert 'opening item' in text
+    assert 'Передать смене &lt;срочно&gt; &amp; проверить' in text
+    assert 'Возьмите их в работу на следующий день' in text
+    assert not stage.notifications.filter(
+        notification_type=ChecklistNotification.NotificationType.COMPLETED_LATE
+    ).exists()
+
+
+def test_completed_with_issues_notification_is_idempotent(notification_setup):
+    stage = complete_opening_with_issue(notification_setup, at(10))
+
+    from checklists.notifications import create_completed_with_issues_notification
+
+    first = create_completed_with_issues_notification(stage)
+    second = create_completed_with_issues_notification(stage)
+
+    assert first.pk == second.pk
+    assert stage.notifications.filter(
+        notification_type=(
+            ChecklistNotification.NotificationType.COMPLETED_WITH_ISSUES
+        )
     ).count() == 1
 
 

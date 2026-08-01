@@ -1163,6 +1163,10 @@ class ChecklistNotification(models.Model):
         DEADLINE_WARNING = 'deadline_warning', 'Скоро дедлайн'
         OVERDUE = 'overdue', 'Просрочка'
         COMPLETED_LATE = 'completed_late', 'Завершено с опозданием'
+        COMPLETED_WITH_ISSUES = (
+            'completed_with_issues',
+            'Завершено с невыполненными пунктами',
+        )
 
     class Status(models.TextChoices):
         PENDING = 'pending', 'Ожидает отправки'

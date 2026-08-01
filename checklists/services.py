@@ -918,9 +918,16 @@ def complete_checklist_stage(
         employee=action_employee,
         request_metadata=request_metadata,
     )
-    if result == DailyChecklistStage.Status.COMPLETED_LATE:
-        from checklists.notifications import create_completed_late_notification
+    from checklists.notifications import (
+        create_completed_late_notification,
+        create_completed_with_issues_notification,
+    )
 
+    issues_notification = create_completed_with_issues_notification(locked_stage)
+    if (
+        issues_notification is None
+        and result == DailyChecklistStage.Status.COMPLETED_LATE
+    ):
         create_completed_late_notification(locked_stage)
     _complete_daily_if_all_stages_finished(
         daily,
