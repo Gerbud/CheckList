@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Min, Q
 from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -92,6 +92,9 @@ from checklists.models import (
     DailyChecklistStage,
     DailyShiftAssignment,
     EmployeeProfile,
+    PriceTagGeneration,
+    PriceTagGenerationItem,
+    PriceTagNameCorrection,
     Store,
     ShiftTemplate,
     StoreAdHocTask,
@@ -139,9 +142,11 @@ from checklists.price_tags import (
     apply_category_rules,
     build_qr_url,
     import_product,
+    download_product_image,
     render_qr_svg,
     select_product_properties,
     site_url_matches,
+    suggest_product_name,
 )
 from checklists.shift_calendar import (
     SHIFT_CELL_META,
@@ -1567,6 +1572,52 @@ def _price_tag_property_limit(profile):
     return min(profile.max_properties, 5)
 
 
+def _ordered_category_property_names(category):
+    selected = [
+        name for name in category.property_name_list
+        if name in category.available_property_names
+    ]
+    return [
+        *selected,
+        *[
+            name for name in category.available_property_names
+            if name not in selected
+        ],
+    ]
+
+
+def _record_price_tag_generation(store, user, products):
+    if not products:
+        return None
+    with transaction.atomic():
+        generation = PriceTagGeneration.objects.create(
+            store=store,
+            created_by=user,
+            item_count=len(products),
+        )
+        PriceTagGenerationItem.objects.bulk_create([
+            PriceTagGenerationItem(
+                generation=generation,
+                source_url=product.url,
+                product_name=product.prominent_name[:500],
+                profile_name=product.price_tag_profile.name,
+                category_name=(
+                    product.category_rule.name if product.category_rule else ''
+                ),
+                sort_order=index,
+            )
+            for index, product in enumerate(products)
+        ])
+        keep_ids = list(
+            PriceTagGeneration.objects.filter(store=store)
+            .values_list('pk', flat=True)[:20]
+        )
+        PriceTagGeneration.objects.filter(store=store).exclude(
+            pk__in=keep_ids,
+        ).delete()
+    return generation
+
+
 @price_tag_tool_required
 def price_tags(request):
     store = request.current_store
@@ -1601,6 +1652,10 @@ def price_tags(request):
                         property_limit,
                     )
                     product.price_tag_profile = profile
+                    corrections = profile.name_corrections.filter(
+                        category=product.category_rule,
+                    )[:20]
+                    suggest_product_name(product, corrections)
                     product.tracking_url = build_qr_url(
                         product.url,
                         profile.qr_utm_parameters,
@@ -1618,7 +1673,7 @@ def price_tags(request):
                 panel = panels.setdefault(category.pk, {
                     'category': category,
                     'profile': product.price_tag_profile,
-                    'available_names': [],
+                    'available_names': list(category.available_property_names),
                     'products': [],
                 })
                 panel['products'].append(product)
@@ -1627,6 +1682,11 @@ def price_tags(request):
                         panel['available_names'].append(name)
             for panel in panels.values():
                 category = panel['category']
+                if panel['available_names'] != category.available_property_names:
+                    category.available_property_names = panel['available_names']
+                    category.save(update_fields=(
+                        'available_property_names', 'updated_at',
+                    ))
                 selected = [
                     name for name in category.property_name_list
                     if name in panel['available_names']
@@ -1650,6 +1710,13 @@ def price_tags(request):
                         property_limit,
                     )
                 category_panels.append(panel)
+            _record_price_tag_generation(store, request.user, products)
+
+    generation_history = list(
+        PriceTagGeneration.objects.filter(store=store)
+        .select_related('created_by')
+        .prefetch_related('items')[:20]
+    )
 
     return render(
         request,
@@ -1675,6 +1742,7 @@ def price_tags(request):
             'can_edit_template': (
                 is_system_admin(request.user) or is_store_director(request.user)
             ),
+            'generation_history': generation_history,
         },
     )
 
@@ -1693,6 +1761,62 @@ def price_tag_qr(request):
     return HttpResponse(render_qr_svg(value), content_type='image/svg+xml')
 
 
+@price_tag_tool_required
+def price_tag_image(request):
+    value = request.GET.get('url', '').strip()
+    if not value or len(value) > 2000:
+        return HttpResponse('Некорректная ссылка фото.', status=400)
+    try:
+        content, content_type = download_product_image(value)
+    except ProductImportError as exc:
+        return HttpResponse(str(exc), status=400)
+    response = HttpResponse(content, content_type=content_type)
+    response['Cache-Control'] = 'private, max-age=3600'
+    return response
+
+
+@require_POST
+@price_tag_tool_required
+def price_tag_name_correction(request):
+    profile = get_object_or_404(
+        StorePriceTagTemplate,
+        pk=request.POST.get('profile_id'),
+        store=request.current_store,
+    )
+    category = None
+    if request.POST.get('category_id'):
+        category = get_object_or_404(
+            StorePriceTagCategory,
+            pk=request.POST.get('category_id'),
+            profile=profile,
+        )
+    source_url = request.POST.get('source_url', '').strip()
+    original_name = request.POST.get('original_name', '').strip()
+    corrected_name = request.POST.get('corrected_name', '').strip()
+    if (
+        not site_url_matches(source_url, profile.site_domain)
+        or not original_name
+        or not corrected_name
+        or len(original_name) > 500
+        or len(corrected_name) > 500
+    ):
+        return JsonResponse({
+            'ok': False,
+            'message': 'Не удалось сохранить название.',
+        }, status=400)
+    correction, _ = PriceTagNameCorrection.objects.update_or_create(
+        profile=profile,
+        source_url=source_url,
+        defaults={
+            'category': category,
+            'original_name': original_name,
+            'corrected_name': corrected_name,
+            'created_by': request.user,
+        },
+    )
+    return JsonResponse({'ok': True, 'name': correction.corrected_name})
+
+
 @require_POST
 @price_tag_tool_required
 def price_tag_category_properties(request):
@@ -1706,9 +1830,10 @@ def price_tag_category_properties(request):
         if name.strip()
     ))
     property_limit = _price_tag_property_limit(category.profile)
+    available_names = set(category.available_property_names)
     if len(names) > property_limit or any(
         len(name) > 160 for name in names
-    ):
+    ) or (available_names and any(name not in available_names for name in names)):
         return JsonResponse({
             'ok': False,
             'message': (
@@ -1806,6 +1931,7 @@ def price_tag_profile(request):
                     instance=category,
                     profile=template,
                 ),
+                _ordered_category_property_names(category),
             )
             for category in template.categories.all()
         ] if template else [],

@@ -49,14 +49,46 @@
 </form>
 
 {% if price_tag_template %}<section class="card p-4 mt-4">
-  <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
-    <div><h2 class="h5 mb-1">Категории {{ price_tag_template.name }}</h2><p class="small text-secondary mb-0">{% if price_tag_template.category_detection_mode == 'url' %}Вставьте полную ссылку на раздел сайта. Товар попадёт в категорию, если его адрес начинается с адреса раздела.{% else %}Категория определяется по названию и значению свойства товара.{% endif %}</p></div>
-  </div>
-  <div class="row g-3">{% for category, category_edit_form in category_forms %}<div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">{{ category.name }}{% if not category.is_active %} <span class="badge text-bg-secondary">выключена</span>{% endif %}</summary>
+  <div class="mb-3"><h2 class="h5 mb-1">Категории {{ price_tag_template.name }}</h2><p class="small text-secondary mb-0">{% if price_tag_template.category_detection_mode == 'url' %}Вставьте полную ссылку на раздел сайта. Товар попадёт в категорию, если его адрес начинается с адреса раздела.{% else %}Категория определяется по названию и значению свойства товара.{% endif %}</p></div>
+  <div class="row g-3">{% for category, category_edit_form, available_names in category_forms %}<div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">{{ category.name }}{% if not category.is_active %} <span class="badge text-bg-secondary">выключена</span>{% endif %}</summary>
     <form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_category"><input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}"><input type="hidden" name="category_id" value="{{ category.pk }}">{% for field in category_edit_form %}{% if price_tag_template.category_detection_mode == 'url' and field.name != 'match_property_name' and field.name != 'match_property_value' or price_tag_template.category_detection_mode == 'property' and field.name != 'source_url' %}<div class="col-12">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}<div class="col-12"><button class="btn btn-sm btn-primary">Сохранить категорию</button></div></form>
+    {% if available_names %}<div class="border-top mt-3 pt-3" data-admin-properties data-category-id="{{ category.pk }}" data-max-properties="{{ price_tag_template.max_properties }}"><div class="fw-semibold mb-2">Свойства на ценнике</div><div class="d-grid gap-1" data-admin-active-list>{% for name in available_names %}{% if name in category.property_name_list %}<div class="d-flex align-items-center gap-2" data-admin-property><label class="form-check flex-grow-1 mb-0"><input class="form-check-input" type="checkbox" value="{{ name }}" checked> {{ name }}</label><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-admin-move="up">↑</button><button class="btn btn-outline-secondary" type="button" data-admin-move="down">↓</button></div></div>{% endif %}{% endfor %}</div><details class="mt-2" data-admin-inactive><summary class="small text-primary">Показать неактивные свойства</summary><div class="d-grid gap-1 mt-2" data-admin-inactive-list>{% for name in available_names %}{% if name not in category.property_name_list %}<div class="d-flex align-items-center gap-2" data-admin-property><label class="form-check flex-grow-1 mb-0"><input class="form-check-input" type="checkbox" value="{{ name }}"> {{ name }}</label><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-admin-move="up">↑</button><button class="btn btn-outline-secondary" type="button" data-admin-move="down">↓</button></div></div>{% endif %}{% endfor %}</div></details><div class="small text-secondary mt-2" data-admin-status></div></div>{% endif %}
     <form method="post" class="mt-2" onsubmit="return confirm('Удалить категорию?')">{% csrf_token %}<input type="hidden" name="action" value="delete_category"><input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}"><input type="hidden" name="category_id" value="{{ category.pk }}"><button class="btn btn-sm btn-outline-danger">Удалить</button></form>
   </details></div>{% endfor %}
   <div class="col-12 col-xl-6"><details class="border rounded-3 p-3"><summary class="fw-bold">+ Добавить категорию</summary><form method="post" class="row g-2 mt-2">{% csrf_token %}<input type="hidden" name="action" value="save_category"><input type="hidden" name="profile_id" value="{{ price_tag_template.pk }}">{% for field in category_form %}{% if price_tag_template.category_detection_mode == 'url' and field.name != 'match_property_name' and field.name != 'match_property_value' or price_tag_template.category_detection_mode == 'property' and field.name != 'source_url' %}<div class="col-12">{% if field.field.widget.input_type == 'checkbox' %}{{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>{% else %}<label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}<div class="col-12"><button class="btn btn-primary">Добавить категорию</button></div></form></details></div>
   </div>
-</section>{% endif %}
+</section>
+<script>
+(function () {
+  const csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]')?.value || '';
+  document.querySelectorAll('[data-admin-properties]').forEach(function (panel) {
+    const status = panel.querySelector('[data-admin-status]');
+    const activeList = panel.querySelector('[data-admin-active-list]');
+    const inactiveList = panel.querySelector('[data-admin-inactive-list]');
+    const inactiveDetails = panel.querySelector('[data-admin-inactive]');
+    function refreshInactive() {
+      inactiveDetails.hidden = !inactiveList.querySelector('[data-admin-property]');
+    }
+    function save() {
+      const selected = Array.from(panel.querySelectorAll('[data-admin-property] input:checked'));
+      const max = Number(panel.dataset.maxProperties || 5);
+      if (selected.length > max) {
+        status.textContent = 'Уже выбрано ' + max + ' свойств. Сначала уберите одно.';
+        return false;
+      }
+      const data = new FormData();
+      data.append('category_id', panel.dataset.categoryId);
+      selected.forEach(function (input) { data.append('property_names', input.value); });
+      status.textContent = 'Сохраняем…';
+      fetch('{% url "checklists:price_tag_category_properties" %}', {method: 'POST', headers: {'X-CSRFToken': csrfToken}, body: data, credentials: 'same-origin'})
+        .then(function (response) { if (!response.ok) throw new Error(); status.textContent = 'Выбор и порядок сохранены'; })
+        .catch(function () { status.textContent = 'Не удалось сохранить.'; });
+      return true;
+    }
+    refreshInactive();
+    panel.querySelectorAll('input[type="checkbox"]').forEach(function (input) { input.addEventListener('change', function () { if (!save()) { input.checked = false; return; } (input.checked ? activeList : inactiveList).appendChild(input.closest('[data-admin-property]')); refreshInactive(); }); });
+    panel.querySelectorAll('[data-admin-move]').forEach(function (button) { button.addEventListener('click', function () { const row = button.closest('[data-admin-property]'); if (button.dataset.adminMove === 'up' && row.previousElementSibling) row.parentElement.insertBefore(row, row.previousElementSibling); else if (button.dataset.adminMove === 'down' && row.nextElementSibling) row.parentElement.insertBefore(row.nextElementSibling, row); else return; save(); }); });
+  });
+})();
+</script>{% endif %}
 {% endblock %}

@@ -2,6 +2,7 @@ import ipaddress
 import json
 import re
 import socket
+from difflib import SequenceMatcher
 from io import BytesIO
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -36,6 +37,9 @@ class ImportedProduct:
     category_rule: object = None
     price_tag_profile: object = None
     tracking_url: str = ''
+    source_h1: str = ''
+    original_name: str = ''
+    suggested_name: str = ''
 
     @property
     def formatted_price(self):
@@ -51,8 +55,9 @@ class ImportedProduct:
 
     @property
     def prominent_name(self):
-        value = ' '.join(item for item in (self.brand, self.model) if item).strip()
-        value = value or self.name
+        if self.suggested_name:
+            return self.suggested_name
+        value = self.name
         if 'бокс' in self.secondary_name.casefold():
             return clean_box_display_name(value, self.properties)
         return value
@@ -297,6 +302,28 @@ def _download(url):
         raise ProductImportError('Не удалось загрузить карточку товара.') from exc
 
 
+def download_product_image(url):
+    _validate_public_url(url)
+    opener = request.build_opener(_SafeRedirectHandler())
+    req = request.Request(
+        url,
+        headers={'User-Agent': 'Mozilla/5.0 PriceTagImage/1.0'},
+    )
+    try:
+        with opener.open(req, timeout=REQUEST_TIMEOUT) as response:
+            content_type = response.headers.get_content_type()
+            if not content_type.startswith('image/'):
+                raise ProductImportError('Ссылка ведёт не на изображение.')
+            raw = response.read(5 * 1024 * 1024 + 1)
+            if len(raw) > 5 * 1024 * 1024:
+                raise ProductImportError('Изображение слишком большое.')
+            return raw, content_type
+    except ProductImportError:
+        raise
+    except (error.URLError, TimeoutError, OSError) as exc:
+        raise ProductImportError('Не удалось загрузить фото товара.') from exc
+
+
 def _walk_json(value):
     if isinstance(value, dict):
         yield value
@@ -440,6 +467,13 @@ def clean_product_name(value):
     value = re.split(r'\s+[—-]\s*купить\b', value, maxsplit=1, flags=re.I)[0]
     value = re.split(r'\s+в магазине\s+', value, maxsplit=1, flags=re.I)[0]
     value = re.sub(
+        r'\s*(?:[|—-]\s*)?(?:купить\s+)?в\s+Москве'
+        r'(?:\s+и|\s*,\s*)\s+Санкт[-‑ ]Петербурге.*$',
+        '',
+        value,
+        flags=re.I,
+    )
+    value = re.sub(
         r'\s+\d{2,4}(?:[.,]\d+)?\s*[xх×*]\s*\d{2,4}(?:[.,]\d+)?'
         r'(?:\s*[xх×*]\s*\d{2,4}(?:[.,]\d+)?)?\s*$',
         '',
@@ -448,6 +482,48 @@ def clean_product_name(value):
     )
     value = value.strip(' ,—-')
     return value[:1].upper() + value[1:] if value else value
+
+
+def suggest_product_name(product, corrections):
+    """Conservatively reuse exact edits and repeated removed phrases."""
+    base_name = product.prominent_name.strip()
+    product.original_name = base_name
+    normalized_url = product.url.split('#', 1)[0]
+    for correction in corrections:
+        if correction.source_url.split('#', 1)[0] == normalized_url:
+            correction.use_count += 1
+            correction.save(update_fields=('use_count', 'updated_at'))
+            product.suggested_name = correction.corrected_name
+            return product
+    best = None
+    for correction in corrections:
+        ratio = SequenceMatcher(
+            None,
+            correction.original_name.casefold(),
+            base_name.casefold(),
+        ).ratio()
+        if ratio >= 0.45 and (best is None or ratio > best[0]):
+            best = (ratio, correction)
+    if best is None:
+        return product
+    correction = best[1]
+    matcher = SequenceMatcher(
+        None,
+        correction.original_name.casefold(),
+        correction.corrected_name.casefold(),
+    )
+    learned = base_name
+    removed_phrases = [
+        correction.original_name[start:end].strip(' ,|—-')
+        for operation, start, end, _, _ in matcher.get_opcodes()
+        if operation == 'delete' and end - start >= 4
+    ]
+    for phrase in removed_phrases:
+        learned = re.sub(re.escape(phrase), '', learned, flags=re.I)
+    learned = re.sub(r'\s+', ' ', learned).strip(' ,|—-')
+    if learned and learned != base_name:
+        product.suggested_name = learned
+    return product
 
 
 def apply_category_rules(product, categories, max_properties=5):
@@ -551,9 +627,10 @@ def import_product(url):
     product = candidates[0] if candidates else {}
     offer = _first_offer(product)
     meta = parser.meta
+    source_h1 = ''.join(parser.h1_parts).strip()
     name = (
-        product.get('name') or meta.get('og:title')
-        or meta.get('twitter:title') or ''.join(parser.h1_parts).strip()
+        source_h1 or product.get('name') or meta.get('og:title')
+        or meta.get('twitter:title')
         or ''.join(parser.title_parts).strip()
     )
     name = clean_product_name(name)
@@ -606,4 +683,5 @@ def import_product(url):
         model=model,
         product_type=product_type,
         category_name=category,
+        source_h1=source_h1,
     )

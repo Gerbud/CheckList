@@ -5,7 +5,8 @@
   .price-tag.print-mode-color { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .price-tag.print-mode-monochrome { --tag-primary: #000 !important; --tag-accent: #000 !important; }
   .price-tag-sheets { display: grid; gap: 16px; justify-content: center; overflow-x: auto; }
-  .price-tag-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: repeat(2, 105mm); grid-template-rows: repeat(2, 148.5mm); background: #fff; box-shadow: 0 .25rem 1rem rgba(15,23,42,.14); }
+  .price-tag-sheet { width: 210mm; height: 297mm; display: grid; grid-template-columns: repeat(2, 105mm); grid-template-rows: repeat(2, 148.5mm); background: #fff; box-shadow: 0 .25rem 1rem rgba(15,23,42,.14); break-after: page; page-break-after: always; }
+  .price-tag-sheet:last-child { break-after: auto; page-break-after: auto; }
   .price-tag { width: 105mm; height: 148.5mm; box-sizing: border-box; background: #fff; border: .35mm dashed #94a3b8; padding: 6mm 6.5mm 6mm 7.5mm; display: flex; flex-direction: column; overflow: hidden; color: #0f172a; position: relative; }
   .price-tag::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3mm; background: var(--tag-accent); }
   .price-tag-head { min-height: 27mm; display: grid; grid-template-columns: minmax(0, 1fr) 40mm; align-items: center; gap: 3mm; padding-bottom: 1.5mm; border-bottom: .3mm solid #e2e8f0; color: var(--tag-primary); }
@@ -65,8 +66,10 @@
 {% block portal_content %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div><h1 class="h3 mb-1">Печать ценников · {{ store.name }}</h1><p class="text-secondary mb-0">Сайт и шаблон определятся автоматически для каждой ссылки.</p></div>
-  <div class="d-flex gap-2">{% if can_edit_template %}<a class="btn btn-outline-primary" href="{% url 'checklists:price_tag_profile' %}">Профили сайтов</a>{% endif %}{% if products %}<button class="btn btn-success" type="button" onclick="window.print()">🖨️ Печатать {{ products|length }} ценников</button>{% endif %}</div>
+  <div class="d-flex flex-wrap gap-2">{% if can_edit_template %}<a class="btn btn-outline-primary" href="{% url 'checklists:price_tag_profile' %}">Профили сайтов</a>{% endif %}{% if products %}<button class="btn btn-success" type="button" onclick="window.print()">🖨️ Печатать</button><button class="btn btn-danger" id="download-price-tags-pdf" type="button">⬇️ Скачать PDF</button>{% endif %}</div>
 </div>
+
+{% if generation_history %}<section class="card p-3 mb-4 no-print"><details><summary class="fw-semibold">История последних генераций</summary><div class="mt-3 d-grid gap-3">{% for generation in generation_history %}<div class="border rounded-3 p-2"><div class="small text-secondary mb-2">{{ generation.created_at|date:"d.m.Y H:i" }} · {{ generation.item_count }} ценников{% if generation.created_by %} · {{ generation.created_by.get_full_name|default:generation.created_by.username }}{% endif %}</div><div class="d-flex flex-wrap gap-2">{% for item in generation.items.all %}<button class="btn btn-sm btn-outline-secondary text-start" type="button" data-history-url="{{ item.source_url }}" title="Добавить ссылку в поле">{{ item.product_name }}</button>{% endfor %}</div></div>{% endfor %}</div></details></section>{% endif %}
 
 <div class="row g-3 mb-4">
   <div class="col-12 {% if can_edit_template %}col-xl-7{% endif %}">
@@ -89,10 +92,11 @@
   {% if unmatched_products %}<div class="alert alert-warning"><strong>Не определена категория:</strong> {% for product in unmatched_products %}{{ product.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Директору нужно добавить правило в профиле сайта.</div>{% endif %}
   <div class="row g-3">{% for panel in category_panels %}<div class="col-12 col-xl-6"><div class="border rounded-3 p-3" data-category-panel data-category-id="{{ panel.category.pk }}" data-max-properties="{{ panel.max_properties }}">
     <div class="d-flex justify-content-between gap-2 mb-2"><strong>{{ panel.profile.name }} · {{ panel.category.name }}</strong><span class="small text-secondary">до {{ panel.max_properties }}</span></div>
-    <div class="d-grid gap-2" data-property-list>{% for name in panel.available_names %}<div class="d-flex align-items-center gap-2 border rounded-2 px-2 py-1" data-property-choice>
-      <label class="form-check flex-grow-1 mb-0"><input class="form-check-input" type="checkbox" data-property-toggle value="{{ name }}" {% if name in panel.selected_names %}checked{% endif %}> <span class="form-check-label">{{ name }}</span></label>
+    <div class="d-grid gap-2" data-active-property-list>{% for name in panel.available_names %}{% if name in panel.selected_names %}<div class="d-flex align-items-center gap-2 border rounded-2 px-2 py-1" data-property-choice>
+      <label class="form-check flex-grow-1 mb-0"><input class="form-check-input" type="checkbox" data-property-toggle value="{{ name }}" checked> <span class="form-check-label">{{ name }}</span></label>
       <div class="btn-group btn-group-sm" role="group" aria-label="Порядок свойства"><button class="btn btn-outline-secondary" type="button" data-move-property="up" title="Поднять">↑</button><button class="btn btn-outline-secondary" type="button" data-move-property="down" title="Опустить">↓</button></div>
-    </div>{% endfor %}</div>
+    </div>{% endif %}{% endfor %}</div>
+    <details class="mt-2" data-inactive-properties><summary class="small text-primary">Показать неактивные свойства</summary><div class="d-grid gap-2 mt-2" data-inactive-property-list>{% for name in panel.available_names %}{% if name not in panel.selected_names %}<div class="d-flex align-items-center gap-2 border rounded-2 px-2 py-1" data-property-choice><label class="form-check flex-grow-1 mb-0"><input class="form-check-input" type="checkbox" data-property-toggle value="{{ name }}"> <span class="form-check-label">{{ name }}</span></label><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-move-property="up">↑</button><button class="btn btn-outline-secondary" type="button" data-move-property="down">↓</button></div></div>{% endif %}{% endfor %}</div></details>
     <div class="small text-secondary mt-2" data-save-status></div>
   </div></div>{% empty %}<div class="col-12"><div class="alert alert-warning mb-0">Для загруженных товаров категория не определена. Директору нужно настроить категории в профиле сайта.</div></div>{% endfor %}</div>
 </section>{% endif %}
@@ -101,8 +105,8 @@
   <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h4 mb-0">Предпросмотр</h2><span class="text-secondary">На листе A4 будет 4 ценника</span></div>
   <div class="price-tag-sheets">{% for sheet in product_sheets %}<div class="price-tag-sheet">{% for product in sheet %}
     {% with template=product.price_tag_profile %}<article class="price-tag print-mode-{{ template.print_mode }}" style="--tag-primary: {{ template.primary_color }}; --tag-accent: {{ template.accent_color }};">
-      <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}{% if template.heading %}<div class="price-tag-heading">{{ template.heading }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" src="{{ product.image_url }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
-      <div class="price-tag-product"><div class="price-tag-type">{{ product.price_tag_category_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
+      <header class="price-tag-head"><div class="price-tag-brand">{% if template.logo %}<img class="price-tag-logo" src="{{ template.logo.url }}" alt="{{ template.name }}">{% elif store.logo %}<img class="price-tag-logo" src="{{ store.logo.url }}" alt="{{ store.name }}">{% else %}<div class="price-tag-store">{{ template.name }}</div>{% endif %}{% if template.heading %}<div class="price-tag-heading">{{ template.heading }}</div>{% endif %}</div>{% if template.show_image and product.image_url %}<img class="price-tag-image" crossorigin="anonymous" src="{% url 'checklists:price_tag_image' %}?url={{ product.image_url|urlencode }}" alt="Фото {{ product.name }}">{% else %}<div class="price-tag-image-placeholder"></div>{% endif %}</header>
+      <div class="price-tag-product"><div class="price-tag-type">{{ product.price_tag_category_name }}</div><div class="price-tag-name" contenteditable="true" spellcheck="false" data-source-url="{{ product.url }}" data-profile-id="{{ template.pk }}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-original-name="{{ product.original_name }}" title="Нажмите, чтобы изменить название">{{ product.prominent_name }}</div>{% if template.show_sku and product.sku or product.manufacturer %}<div class="price-tag-sku price-tag-sku-line">{% if template.show_sku and product.sku %}<span>Артикул: {{ product.sku }}</span>{% endif %}{% if product.manufacturer %}<span>Производитель: {{ product.manufacturer }}</span>{% endif %}</div>{% endif %}</div>
       <div class="price-tag-price">{{ product.formatted_price }}</div>
       {% if template.show_properties and product.property_rows %}<div class="price-tag-properties">{% for name, value, selected in product.property_rows %}<div class="price-tag-property{% if not selected %} d-none{% endif %}" data-category-id="{% if product.category_rule %}{{ product.category_rule.pk }}{% endif %}" data-property-name="{{ name }}"><span>{{ name }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
       <footer class="price-tag-footer"><span>{{ template.footer|default:store.name }}</span><span>Дата печати: {{ printed_on|date:"d.m.Y" }}</span><a class="price-tag-qr" href="{{ product.qr_url }}" aria-label="Открыть страницу товара"><img class="price-tag-qr-image" src="{% url 'checklists:price_tag_qr' %}?data={{ product.qr_url|urlencode }}" alt="QR-код товара"></a></footer>
@@ -168,6 +172,13 @@
 
   document.querySelectorAll('[data-category-panel]').forEach(function (panel) {
     const status = panel.querySelector('[data-save-status]');
+    const activeList = panel.querySelector('[data-active-property-list]');
+    const inactiveList = panel.querySelector('[data-inactive-property-list]');
+    const inactiveDetails = panel.querySelector('[data-inactive-properties]');
+    function refreshInactiveProperties() {
+      inactiveDetails.hidden = !inactiveList.querySelector('[data-property-choice]');
+    }
+    refreshInactiveProperties();
     panel.querySelectorAll('[data-property-toggle]').forEach(function (checkbox) {
       checkbox.addEventListener('change', function () {
         const selected = selectedInputs(panel);
@@ -177,6 +188,9 @@
           status.textContent = 'Уже выбрано ' + maxProperties + ' свойств. Сначала уберите одно, затем выберите другое.';
           return;
         }
+        const choice = checkbox.closest('[data-property-choice]');
+        (checkbox.checked ? activeList : inactiveList).appendChild(choice);
+        refreshInactiveProperties();
         savePropertySelection(panel);
       });
     });
@@ -211,13 +225,68 @@
   }
 
   document.querySelectorAll('.price-tag-name[contenteditable="true"]').forEach(function (name) {
+    name.dataset.savedName = name.textContent.trim();
     fitPriceTagName(name);
     name.addEventListener('input', function () { fitPriceTagName(name); });
     name.addEventListener('paste', function (event) {
       event.preventDefault();
       document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
     });
+    name.addEventListener('blur', function () {
+      const correctedName = name.textContent.trim();
+      if (!correctedName || correctedName === name.dataset.savedName) return;
+      const payload = new FormData();
+      payload.append('profile_id', name.dataset.profileId);
+      if (name.dataset.categoryId) payload.append('category_id', name.dataset.categoryId);
+      payload.append('source_url', name.dataset.sourceUrl);
+      payload.append('original_name', name.dataset.originalName || name.dataset.savedName);
+      payload.append('corrected_name', correctedName);
+      fetch('{% url "checklists:price_tag_name_correction" %}', {
+        method: 'POST', headers: {'X-CSRFToken': csrfToken}, body: payload,
+        credentials: 'same-origin'
+      }).then(function (response) {
+        if (!response.ok) throw new Error();
+        name.dataset.savedName = correctedName;
+        name.title = 'Название сохранено для будущих ценников';
+      }).catch(function () {
+        name.title = 'Не удалось сохранить название';
+      });
+    });
+  });
+
+  document.getElementById('download-price-tags-pdf')?.addEventListener('click', function () {
+    const button = this;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Создаём PDF…';
+    html2pdf().set({
+      margin: 0,
+      filename: 'price-tags-{{ printed_on|date:"Y-m-d" }}.pdf',
+      image: {type: 'jpeg', quality: 0.98},
+      html2canvas: {scale: 2, useCORS: true, backgroundColor: '#ffffff'},
+      jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'},
+      pagebreak: {mode: ['css', 'legacy']}
+    }).from(document.querySelector('.price-tag-sheets')).save().finally(function () {
+      button.disabled = false;
+      button.textContent = originalText;
+    });
   });
 })();
-</script>{% endif %}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>{% endif %}
+<script>
+(function () {
+  const field = document.getElementById('{{ links_form.urls.id_for_label }}');
+  if (!field) return;
+  document.querySelectorAll('[data-history-url]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const values = field.value.split(/\r?\n/).map(function (item) { return item.trim(); }).filter(Boolean);
+      if (!values.includes(button.dataset.historyUrl)) values.push(button.dataset.historyUrl);
+      field.value = values.join('\n');
+      field.focus();
+      field.scrollIntoView({behavior: 'smooth', block: 'center'});
+    });
+  });
+})();
+</script>
 {% endblock %}

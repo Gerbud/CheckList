@@ -205,6 +205,11 @@ class StorePriceTagCategory(models.Model):
         default='',
         help_text='Каждое свойство с новой строки, в нужном порядке.',
     )
+    available_property_names = models.JSONField(
+        'найденные свойства категории',
+        default=list,
+        blank=True,
+    )
     sort_order = models.PositiveIntegerField('порядок', default=0)
     is_active = models.BooleanField('активна', default=True)
     updated_at = models.DateTimeField('изменена', auto_now=True)
@@ -226,6 +231,91 @@ class StorePriceTagCategory(models.Model):
 
     def __str__(self):
         return f'{self.profile.name}: {self.name}'
+
+
+class PriceTagGeneration(models.Model):
+    store = models.ForeignKey(
+        Store,
+        verbose_name='магазин',
+        on_delete=models.CASCADE,
+        related_name='price_tag_generations',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='создал',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='price_tag_generations',
+    )
+    item_count = models.PositiveSmallIntegerField('ценников', default=0)
+    created_at = models.DateTimeField('создано', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'генерация ценников'
+        verbose_name_plural = 'генерации ценников'
+        ordering = ('-created_at', '-id')
+
+
+class PriceTagGenerationItem(models.Model):
+    generation = models.ForeignKey(
+        PriceTagGeneration,
+        verbose_name='генерация',
+        on_delete=models.CASCADE,
+        related_name='items',
+    )
+    source_url = models.URLField('ссылка товара', max_length=2000)
+    product_name = models.CharField('название из h1', max_length=500)
+    profile_name = models.CharField('интернет-магазин', max_length=120)
+    category_name = models.CharField('категория', max_length=120, blank=True)
+    sort_order = models.PositiveSmallIntegerField('порядок', default=0)
+
+    class Meta:
+        verbose_name = 'товар в генерации ценников'
+        verbose_name_plural = 'товары в генерации ценников'
+        ordering = ('sort_order', 'id')
+
+
+class PriceTagNameCorrection(models.Model):
+    profile = models.ForeignKey(
+        StorePriceTagTemplate,
+        verbose_name='профиль сайта',
+        on_delete=models.CASCADE,
+        related_name='name_corrections',
+    )
+    category = models.ForeignKey(
+        StorePriceTagCategory,
+        verbose_name='категория',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='name_corrections',
+    )
+    source_url = models.URLField('ссылка товара', max_length=2000)
+    original_name = models.CharField('исходное название', max_length=500)
+    corrected_name = models.CharField('исправленное название', max_length=500)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='исправил',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='price_tag_name_corrections',
+    )
+    use_count = models.PositiveIntegerField('использований', default=0)
+    created_at = models.DateTimeField('создано', auto_now_add=True)
+    updated_at = models.DateTimeField('изменено', auto_now=True)
+
+    class Meta:
+        verbose_name = 'правка названия ценника'
+        verbose_name_plural = 'правки названий ценников'
+        ordering = ('-updated_at', '-id')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('profile', 'source_url'),
+                name='unique_price_tag_name_correction_url',
+            ),
+        ]
 
 
 SCHEDULE_CHANGE_HELP = (

@@ -3,6 +3,8 @@ from django.urls import reverse
 
 from checklists.models import (
     EmployeeProfile,
+    PriceTagGeneration,
+    PriceTagNameCorrection,
     Store,
     StorePriceTagCategory,
     StorePriceTagTemplate,
@@ -13,6 +15,7 @@ from checklists.price_tags import (
     build_qr_url,
     clean_product_name,
     import_product,
+    suggest_product_name,
 )
 from checklists.test_portals import create_access_user
 
@@ -90,7 +93,7 @@ def test_product_is_imported_from_schema_org(monkeypatch):
     assert ('Вес', '18 кг') in product.properties
     assert ('Производитель', 'Broomer, Россия') in product.properties
     assert product.manufacturer == 'Broomer, Россия'
-    assert product.prominent_name == 'Broomer Venture L'
+    assert product.prominent_name == 'Бокс Broomer Venture L'
     assert product.secondary_name == 'Бокс'
 
 
@@ -114,6 +117,29 @@ def test_product_falls_back_to_heading_price_and_table(monkeypatch):
     assert product.formatted_price == '58 900 ₽'
     assert product.sku == '01.129.01'
     assert ('Объем (л.)', '430') in product.properties
+
+
+def test_h1_has_priority_and_seo_city_tail_is_removed(monkeypatch):
+    html = '''
+        <html><head>
+        <meta property="og:title" content="Название из meta">
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product",
+         "name":"Название из schema","offers":{"price":"1000"}}
+        </script></head><body>
+        <h1>Багажник Евродеталь ET4010RR — купить в Москве и Санкт-Петербурге</h1>
+        </body></html>
+    '''
+    monkeypatch.setattr(
+        'checklists.price_tags._download',
+        lambda url: (html, 'https://shop.example/product/'),
+    )
+
+    product = import_product('https://shop.example/product/')
+
+    assert product.source_h1.startswith('Багажник Евродеталь')
+    assert product.name == 'Багажник Евродеталь ET4010RR'
+    assert product.prominent_name == 'Багажник Евродеталь ET4010RR'
 
 
 def test_director_can_generate_and_edit_store_profile(
@@ -613,7 +639,7 @@ def test_seo_product_name_is_cleaned_without_losing_variant():
         _product_identity({}, product.name, [], {})
     )
     assert product.secondary_name == 'Бокс на крышу'
-    assert product.prominent_name == 'Element 590 (скоба)'
+    assert product.prominent_name == 'Бокс на крышу Element 590 (скоба)'
 
     assert clean_product_name(
         'Евродеталь ET4010RR багажник в сборе на рейлинги '
@@ -649,3 +675,182 @@ def test_four_price_tags_are_grouped_on_one_a4_sheet(
     assert content.count('class="price-tag print-mode-') == 4
     assert 'grid-template-columns: repeat(2, 105mm)' in content
     assert 'grid-template-rows: repeat(2, 148.5mm)' in content
+
+
+def test_generation_history_keeps_last_twenty_and_reuses_url(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    store = price_tag_setup['store']
+    for index in range(20):
+        PriceTagGeneration.objects.create(
+            store=store,
+            created_by=price_tag_setup['terminal'],
+            item_count=1,
+        )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url=url,
+            name='Багажник из H1',
+            price='1000',
+        ),
+    )
+    client.force_login(price_tag_setup['terminal'])
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/product/history/'},
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert PriceTagGeneration.objects.filter(store=store).count() == 20
+    assert 'История последних генераций' in content
+    assert 'data-history-url="https://example.test/product/history/"' in content
+    assert '>Багажник из H1</button>' in content
+
+
+def test_corrected_name_is_saved_and_reused_for_same_product(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    profile = price_tag_setup['es_profile']
+    category = StorePriceTagCategory.objects.create(
+        profile=profile,
+        name='Багажники',
+        source_url='https://example.test/racks/',
+    )
+    client.force_login(price_tag_setup['terminal'])
+    save_response = client.post(
+        reverse('checklists:price_tag_name_correction'),
+        {
+            'profile_id': profile.pk,
+            'category_id': category.pk,
+            'source_url': 'https://example.test/racks/item-1/',
+            'original_name': 'Длинное исходное название',
+            'corrected_name': 'Евродеталь ET4010RR',
+        },
+    )
+    assert save_response.status_code == 200
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url=url,
+            name='Длинное исходное название',
+        ),
+    )
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/racks/item-1/'},
+    )
+
+    assert response.status_code == 200
+    assert 'Евродеталь ET4010RR' in response.content.decode()
+    correction = PriceTagNameCorrection.objects.get(profile=profile)
+    assert correction.use_count == 1
+
+
+def test_similar_product_uses_learned_title_cleanup(price_tag_setup):
+    category = StorePriceTagCategory.objects.create(
+        profile=price_tag_setup['es_profile'],
+        name='Багажники',
+        source_url='https://example.test/racks/',
+    )
+    correction = PriceTagNameCorrection.objects.create(
+        profile=price_tag_setup['es_profile'],
+        category=category,
+        source_url='https://example.test/racks/item-1/',
+        original_name='Евродеталь ET4010RR багажник в сборе на рейлинги',
+        corrected_name='Евродеталь ET4010RR',
+    )
+    product = ImportedProduct(
+        url='https://example.test/racks/item-2/',
+        name='Евродеталь ET4011RR багажник в сборе на рейлинги',
+    )
+
+    suggest_product_name(product, [correction])
+
+    assert product.prominent_name == 'Евродеталь ET4011RR'
+
+
+def test_discovered_properties_are_shared_with_admin_and_employee(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    category = StorePriceTagCategory.objects.create(
+        profile=price_tag_setup['es_profile'],
+        name='Багажники',
+        source_url='https://example.test/racks/',
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url=url,
+            name='Багажник',
+            properties=[('Место установки', 'на рейлинги'), ('Вес', '4 кг')],
+        ),
+    )
+    client.force_login(price_tag_setup['terminal'])
+    generated = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/racks/item/'},
+    )
+    category.refresh_from_db()
+
+    assert generated.status_code == 200
+    assert category.available_property_names == ['Место установки', 'Вес']
+    assert 'Показать неактивные свойства' in generated.content.decode()
+
+    client.force_login(price_tag_setup['director'])
+    admin_page = client.get(
+        reverse('checklists:price_tag_profile'),
+        {'profile': price_tag_setup['es_profile'].pk},
+    )
+    admin_content = admin_page.content.decode()
+    assert 'data-admin-active-list' in admin_content
+    assert 'data-admin-inactive-list' in admin_content
+    assert 'Место установки' in admin_content
+
+    saved = client.post(
+        reverse('checklists:price_tag_category_properties'),
+        {'category_id': category.pk, 'property_names': ['Вес', 'Место установки']},
+    )
+    assert saved.status_code == 200
+    category.refresh_from_db()
+    assert category.property_name_list == ['Вес', 'Место установки']
+
+
+def test_product_image_proxy_and_pdf_download_controls(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    client.force_login(price_tag_setup['director'])
+    monkeypatch.setattr(
+        'checklists.portal_views.download_product_image',
+        lambda url: (b'image-bytes', 'image/png'),
+    )
+    image_response = client.get(
+        reverse('checklists:price_tag_image'),
+        {'url': 'https://example.test/photo.png'},
+    )
+    assert image_response.status_code == 200
+    assert image_response['Content-Type'] == 'image/png'
+    assert image_response.content == b'image-bytes'
+
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(url=url, name='Товар', price='1000'),
+    )
+    page = client.post(
+        reverse('checklists:director_price_tags'),
+        {'action': 'generate', 'urls': 'https://example.test/product/pdf/'},
+    ).content.decode()
+    assert 'id="download-price-tags-pdf"' in page
+    assert 'html2pdf.js' in page
+    assert "format: 'a4'" in page

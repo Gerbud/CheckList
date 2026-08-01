@@ -189,6 +189,12 @@ urlpatterns = [
     path('director/reports/', portal_views.director_reports, name='director_reports'),
     path('director/price-tags/', portal_views.price_tags, name='director_price_tags'),
     path('director/price-tags/qr/', portal_views.price_tag_qr, name='price_tag_qr'),
+    path('director/price-tags/image/', portal_views.price_tag_image, name='price_tag_image'),
+    path(
+        'director/price-tags/name-correction/',
+        portal_views.price_tag_name_correction,
+        name='price_tag_name_correction',
+    ),
     path(
         'director/price-tags/category-properties/',
         portal_views.price_tag_category_properties,

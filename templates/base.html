@@ -63,19 +63,19 @@
 <body>
 <nav class="navbar navbar-dark bg-dark mb-3">
     <div class="container-fluid app-shell px-3">
-        <a class="navbar-brand d-flex align-items-center gap-2" href="{% if request.user.is_authenticated %}{% url 'checklists:post_login_redirect' %}{% else %}{% url 'login' %}{% endif %}">
-            {% if store.logo %}<img src="{{ store.logo.url }}" alt="{{ store.name }}" style="max-height: 40px; max-width: 160px;">
-            {% elif portal_store.logo %}<img src="{{ portal_store.logo.url }}" alt="{{ portal_store.name }}" style="max-height: 40px; max-width: 160px;">
-            {% else %}Чек-лист{% endif %}
-        </a>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <a class="navbar-brand d-flex align-items-center gap-2 me-2" href="{% if request.user.is_authenticated %}{% url 'checklists:post_login_redirect' %}{% else %}{% url 'login' %}{% endif %}">
+                {% if store.logo %}<img src="{{ store.logo.url }}" alt="{{ store.name }}" style="max-height: 40px; max-width: 160px;">
+                {% elif portal_store.logo %}<img src="{{ portal_store.logo.url }}" alt="{{ portal_store.name }}" style="max-height: 40px; max-width: 160px;">
+                {% else %}Чек-лист{% endif %}
+            </a>
+            {% if request.user.is_authenticated %}
+                {% if header_checklist_available %}<a id="header-checklist-button" class="btn btn-warning fw-semibold{% if header_checklist_urgent %} header-checklist-urgent{% endif %}" href="{% url 'checklists:dashboard' %}" data-can-warn="{{ header_checklist_can_warn|yesno:'1,0' }}" data-warning-at="{{ header_checklist_warning_at }}" data-deadline-at="{{ header_checklist_deadline_at }}">Чек-лист</a>{% endif %}
+                {% if portal_store %}<a class="btn btn-primary fw-semibold" href="{% url 'checklists:director_price_tags' %}">Ценники</a>{% endif %}
+            {% endif %}
+        </div>
         {% if request.user.is_authenticated %}
             <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
-            {% if header_checklist_available %}
-                <a id="header-checklist-button" class="btn btn-warning fw-semibold{% if header_checklist_urgent %} header-checklist-urgent{% endif %}" href="{% url 'checklists:dashboard' %}" data-can-warn="{{ header_checklist_can_warn|yesno:'1,0' }}" data-warning-at="{{ header_checklist_warning_at }}" data-deadline-at="{{ header_checklist_deadline_at }}">Чек-лист</a>
-            {% endif %}
-            {% if portal_store %}
-                <a class="btn btn-primary fw-semibold" href="{% url 'checklists:director_price_tags' %}">Ценники</a>
-            {% endif %}
             {% if personal_schedule_available %}
                 <a class="btn btn-outline-light" href="{% url 'checklists:employee_schedule' %}">Мой график</a>
             {% endif %}
