@@ -737,10 +737,10 @@ def test_four_price_tags_are_grouped_on_one_a4_sheet(
     assert response.status_code == 200
     assert content.count('class="price-tag-sheet"') == 1
     assert content.count('class="price-tag print-mode-') == 4
-    assert 'width: 200mm; height: 285mm' in content
-    assert 'grid-template-columns: repeat(2, 100mm)' in content
-    assert 'grid-template-rows: repeat(2, 142.5mm)' in content
-    assert 'margin: 5mm auto 0' in content
+    assert 'width: 198mm; height: 280mm' in content
+    assert 'grid-template-columns: repeat(2, 99mm)' in content
+    assert 'grid-template-rows: repeat(2, 140mm)' in content
+    assert 'margin: 8mm auto 0' in content
 
 
 def test_generation_history_keeps_last_twenty_and_reuses_url(
@@ -921,4 +921,6 @@ def test_product_image_proxy_and_pdf_download_controls(
     assert 'html2canvas.min.js' in page
     assert 'jspdf.umd.min.js' in page
     assert "pdf.addImage(canvas.toDataURL('image/png')" in page
+    assert 'prepareContainedImagesForPdf' in page
+    assert "window.addEventListener('beforeprint', enablePriceTagPrintLayout)" in page
     assert "if (index > 0) pdf.addPage('a4', 'portrait')" in page

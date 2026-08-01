@@ -5,10 +5,10 @@
   .price-tag.print-mode-color { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .price-tag.print-mode-monochrome { --tag-primary: #000 !important; --tag-accent: #000 !important; }
   .price-tag-sheets { display: grid; gap: 16px; justify-content: center; overflow-x: auto; }
-  .price-tag-sheet { width: 200mm; height: 285mm; display: grid; grid-template-columns: repeat(2, 100mm); grid-template-rows: repeat(2, 142.5mm); background: #fff; box-shadow: 0 .25rem 1rem rgba(15,23,42,.14); break-after: page; page-break-after: always; }
+  .price-tag-sheet { width: 198mm; height: 280mm; display: grid; grid-template-columns: repeat(2, 99mm); grid-template-rows: repeat(2, 140mm); background: #fff; box-shadow: 0 .25rem 1rem rgba(15,23,42,.14); }
   .price-tag-sheet.pdf-rendering { box-shadow: none; }
-  .price-tag-sheet:last-child { break-after: auto; page-break-after: auto; }
-  .price-tag { width: 100mm; height: 142.5mm; box-sizing: border-box; background: #fff; border: .35mm dashed #94a3b8; padding: 5mm 5.5mm 5mm 6.5mm; display: flex; flex-direction: column; overflow: hidden; color: #0f172a; position: relative; }
+  .price-tag-sheet:not(:last-child) { break-after: page; page-break-after: always; }
+  .price-tag { width: 99mm; height: 140mm; box-sizing: border-box; background: #fff; border: .35mm dashed #94a3b8; padding: 4mm 5.5mm 4mm 6.5mm; display: flex; flex-direction: column; overflow: hidden; color: #0f172a; position: relative; }
   .price-tag::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3mm; background: var(--tag-accent); }
   .price-tag-head { min-height: 27mm; display: grid; grid-template-columns: minmax(0, 1fr) 40mm; align-items: center; gap: 3mm; padding-bottom: 1.5mm; border-bottom: .3mm solid #e2e8f0; color: var(--tag-primary); }
   .price-tag-brand { min-width: 0; }
@@ -58,13 +58,16 @@
   @media print {
     @page { size: A4 portrait; margin: 0; }
     body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-    body * { visibility: hidden !important; }
-    .price-tag-print-area, .price-tag-print-area * { visibility: visible !important; }
-    .price-tag-print-area { position: absolute; inset: 0; width: 210mm; }
+    body.price-tag-printing > nav { display: none !important; }
+    body.price-tag-printing > main,
+    body.price-tag-printing > main > div,
+    body.price-tag-printing > main > div > section { display: block !important; width: 210mm !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
+    body.price-tag-printing > main > div > section > :not(.price-tag-print-area) { display: none !important; }
+    .price-tag-print-area { position: static; width: 210mm; margin: 0; padding: 0; }
     .price-tag-preview-toolbar { display: none !important; }
-    .price-tag-sheets { display: block; width: 210mm; padding: 0; overflow: visible; }
-    .price-tag-sheet { width: 200mm; height: 285mm; margin: 5mm auto 0; display: grid; grid-template-columns: repeat(2, 100mm); grid-template-rows: repeat(2, 142.5mm); box-shadow: none; break-after: page; page-break-after: always; }
-    .price-tag-sheet:last-child { break-after: auto; page-break-after: auto; }
+    .price-tag-sheets { display: block; width: 210mm; margin: 0; padding: 0; overflow: visible; }
+    .price-tag-sheet { width: 198mm; height: 280mm; margin: 8mm auto 0; display: grid; grid-template-columns: repeat(2, 99mm); grid-template-rows: repeat(2, 140mm); box-shadow: none; break-after: auto; page-break-after: auto; }
+    .price-tag-sheet:not(:last-child) { break-after: page; page-break-after: always; }
     .price-tag { break-inside: avoid; page-break-inside: avoid; }
     .price-tag-name[contenteditable="true"] { outline: none !important; background: transparent !important; }
     .price-tag-promotion [contenteditable="true"] { outline: none !important; }
@@ -338,13 +341,81 @@
     }));
   }
 
+  async function prepareContainedImagesForPdf(sheet) {
+    const prepared = [];
+    const images = Array.from(sheet.querySelectorAll('img'));
+    images.forEach(function (item) {
+      if (!item.naturalWidth || !item.naturalHeight) return;
+      const bounds = item.getBoundingClientRect();
+      const pixelRatio = 3;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bounds.width * pixelRatio));
+      canvas.height = Math.max(1, Math.round(bounds.height * pixelRatio));
+      const context = canvas.getContext('2d');
+      const isQrCode = item.classList.contains('price-tag-qr-image');
+      if (isQrCode) {
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.imageSmoothingEnabled = false;
+      } else {
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
+      }
+      const scale = Math.min(
+        canvas.width / item.naturalWidth,
+        canvas.height / item.naturalHeight
+      );
+      const width = item.naturalWidth * scale;
+      const height = item.naturalHeight * scale;
+      context.drawImage(
+        item,
+        (canvas.width - width) / 2,
+        (canvas.height - height) / 2,
+        width,
+        height
+      );
+      prepared.push({
+        item: item,
+        source: item.src,
+        objectFit: item.style.objectFit
+      });
+      item.src = canvas.toDataURL('image/png');
+      item.style.objectFit = 'fill';
+    });
+    await Promise.all(prepared.map(async function (entry) {
+      try { await entry.item.decode(); } catch (error) { return; }
+    }));
+    return function restoreImages() {
+      prepared.forEach(function (entry) {
+        entry.item.src = entry.source;
+        entry.item.style.objectFit = entry.objectFit;
+      });
+    };
+  }
+
+  function enablePriceTagPrintLayout() {
+    document.body.classList.add('price-tag-printing');
+  }
+
+  function disablePriceTagPrintLayout() {
+    document.body.classList.remove('price-tag-printing');
+  }
+
+  window.addEventListener('beforeprint', enablePriceTagPrintLayout);
+  window.addEventListener('afterprint', disablePriceTagPrintLayout);
+
   document.getElementById('print-price-tags')?.addEventListener('click', async function () {
     const button = this;
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = 'Готовим печать…';
     await waitForPriceTagImages();
-    window.print();
+    enablePriceTagPrintLayout();
+    try {
+      window.print();
+    } finally {
+      window.setTimeout(disablePriceTagPrintLayout, 0);
+    }
     button.disabled = false;
     button.textContent = originalText;
   });
@@ -363,17 +434,23 @@
       for (let index = 0; index < sheets.length; index += 1) {
         const sheet = sheets[index];
         sheet.classList.add('pdf-rendering');
-        const canvas = await window.html2canvas(sheet, {
-          scale: 3,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          scrollX: 0,
-          scrollY: -window.scrollY
-        });
-        sheet.classList.remove('pdf-rendering');
+        const restoreImages = await prepareContainedImagesForPdf(sheet);
+        let canvas;
+        try {
+          canvas = await window.html2canvas(sheet, {
+            scale: 3,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            scrollX: 0,
+            scrollY: -window.scrollY
+          });
+        } finally {
+          restoreImages();
+          sheet.classList.remove('pdf-rendering');
+        }
         if (index > 0) pdf.addPage('a4', 'portrait');
-        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 5, 6, 200, 285);
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 6, 8.5, 198, 280);
       }
       pdf.save('price-tags-{{ printed_on|date:"Y-m-d" }}.pdf');
     } catch (error) {
