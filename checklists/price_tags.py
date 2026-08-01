@@ -20,6 +20,57 @@ class ProductImportError(Exception):
     pass
 
 
+class _PinelSearchHTMLParser(HTMLParser):
+    """Extract PINEL result cards without depending on HTML whitespace."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.cards = []
+        self.card = None
+        self.capture = ''
+
+    def _finish_card(self):
+        if self.card:
+            self.cards.append(self.card)
+        self.card = None
+        self.capture = ''
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        classes = set(attributes.get('class', '').split())
+        if tag == 'div' and 'product__item' in classes:
+            self._finish_card()
+            self.card = {'href': '', 'name_parts': [], 'sku_parts': [], 'price_parts': []}
+            return
+        if not self.card:
+            return
+        if tag == 'a' and 'item__title' in classes:
+            href = attributes.get('href', '')
+            if '/catalog/sku/' in href:
+                self.card['href'] = href
+                self.capture = 'name_parts'
+        elif 'item__vendor_code' in classes:
+            self.capture = 'sku_parts'
+        elif 'price' in classes:
+            self.capture = 'price_parts'
+
+    def handle_endtag(self, tag):
+        if (
+            (tag == 'a' and self.capture == 'name_parts')
+            or (tag == 'p' and self.capture == 'sku_parts')
+            or (tag == 'span' and self.capture == 'price_parts')
+        ):
+            self.capture = ''
+
+    def handle_data(self, data):
+        if self.card and self.capture:
+            self.card[self.capture].append(data)
+
+    def close(self):
+        super().close()
+        self._finish_card()
+
+
 def format_product_price(price, currency='RUB'):
     if not price:
         return 'Цена не указана'
@@ -594,56 +645,28 @@ def _pinel_search_variants(
     products_html = (
         search_html[products_marker.start():] if products_marker else search_html
     )
-    card_starts = list(re.finditer(
-        r'<div\s+class=["\'][^"\']*\bproduct__item\b[^"\']*["\']',
-        products_html,
-        re.IGNORECASE,
-    ))
+    search_parser = _PinelSearchHTMLParser()
+    search_parser.feed(products_html)
+    search_parser.close()
     variants = []
     seen_urls = set()
-    for index, card_start in enumerate(card_starts):
-        end = (
-            card_starts[index + 1].start()
-            if index + 1 < len(card_starts) else len(products_html)
-        )
-        card = products_html[card_start.start():end]
-        title_match = re.search(
-            r'<a\b(?=[^>]*\bclass=["\'][^"\']*\bitem__title\b)'
-            r'(?P<attrs>[^>]*)>(?P<name>.*?)</a>',
-            card,
-            re.IGNORECASE | re.DOTALL,
-        )
-        title_attrs = title_match.group('attrs') if title_match else ''
-        href_match = re.search(
-            r'\bhref=["\'](?P<href>/catalog/sku/[^"\']+)["\']',
-            title_attrs,
-            re.IGNORECASE,
-        )
-        sku_match = re.search(
-            r'item__vendor_code[^>]*>\s*Артикул:\s*([^<]+)</p>',
-            card,
-            re.IGNORECASE,
-        )
-        price_match = re.search(
-            r'<span\b[^>]*class=["\'][^"\']*\bprice\b[^"\']*["\']'
-            r'[^>]*>\s*([\d\s\u00a0]+)\s*₽',
-            card,
-            re.IGNORECASE,
-        )
-        if not title_match or not href_match or not sku_match:
+    for card in search_parser.cards:
+        name = re.sub(r'\s+', ' ', ''.join(card['name_parts'])).strip()
+        sku_text = re.sub(r'\s+', ' ', ''.join(card['sku_parts'])).strip()
+        sku_match = re.search(r'Артикул\s*:\s*(\S+)', sku_text, re.IGNORECASE)
+        if not card['href'] or not name or not sku_match:
             continue
         candidate_sku = re.sub(r'\s+', '', sku_match.group(1))
         if _pinel_base_sku(candidate_sku) != base_sku:
             continue
-        url = parse.urljoin(final_url, href_match.group('href'))
+        url = parse.urljoin(final_url, card['href'])
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        name = re.sub(r'<[^>]+>', '', title_match.group('name'))
-        name = re.sub(r'\s+', ' ', name).strip()
-        price = re.sub(
-            r'[\s\u00a0]+', '', price_match.group(1) if price_match else '',
+        price_match = re.search(
+            r'([\d\s\u00a0]+)\s*₽', ''.join(card['price_parts']),
         )
+        price = re.sub(r'[\s\u00a0]+', '', price_match.group(1)) if price_match else ''
         currency = 'RUB'
         current_path = parse.urlsplit(final_url).path.rstrip('/')
         candidate_path = parse.urlsplit(url).path.rstrip('/')
