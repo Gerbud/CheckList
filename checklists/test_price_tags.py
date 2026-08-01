@@ -245,7 +245,7 @@ def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
       <span class="base__price">Нет в наличии</span>
       </div>
       <div class="product__item product_item-js">
-      <a href="/catalog/sku/2179/" class="item__title">
+      <a class="item__title" href="/catalog/sku/2179/">
         Фонарь Greenworks, АКБ 4 А/ч и ЗУ</a>
       <p class="item__vendor_code">Артикул: 3502407UB</p>
       <span class="base__price">Нет в наличии</span>
@@ -254,7 +254,10 @@ def test_pinel_reads_missing_search_prices_from_variant_pages(monkeypatch):
     pages = {
         '/catalog/sku/1379/': product_page('3502407', '1490'),
         '/catalog/sku/2178/': product_page('3502407UA', '1990'),
-        '/catalog/sku/2179/': product_page('3502407UB', '2490'),
+        '/catalog/sku/2179/': '''
+          <html><body><h1>Фонарь Greenworks, АКБ 4 А/ч и ЗУ</h1>
+          <div>Цена комплекта: <strong>2 490 ₽</strong></div></body></html>
+        ''',
     }
 
     def fake_download(url):
@@ -1002,7 +1005,8 @@ def test_missing_pinel_category_is_created_automatically(
     assert '>Greenworks G24SL200</div>' in content
     assert 'Фонарь Greenworks 24V G24SL200 | 3502407UA' not in content
     assert 'class="price-tag-voltage series-24"' in content
-    assert '<span>серия</span><strong>24V</strong>' in content
+    assert '<strong>24V</strong>' in content
+    assert '<span>серия</span>' not in content
     assert 'class="price-tag-price-variants"' in content
     assert 'Без АКБ и ЗУ' in content
     assert 'class="price-tag-warranty"' in content

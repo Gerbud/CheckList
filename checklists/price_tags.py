@@ -518,10 +518,27 @@ def _offer_from_html(html):
         for item in _walk_json(document) if _is_product(item)
     ]
     offer = _first_offer(candidates[0]) if candidates else {}
-    return (
-        str(offer.get('price') or offer.get('lowPrice') or '').strip(),
-        str(offer.get('priceCurrency') or 'RUB').strip(),
-    )
+    price = str(
+        offer.get('price') or offer.get('lowPrice')
+        or parser.meta.get('product:price:amount')
+        or parser.meta.get('og:price:amount') or ''
+    ).strip()
+    if not price:
+        page_text = ' '.join(parser.text_parts)
+        price_match = re.search(
+            r'(?<!\d)(\d{1,3}(?:[\s\u00a0]\d{3})+|\d{3,})\s*'
+            r'(?:₽|[pр]\b)',
+            page_text,
+            re.IGNORECASE,
+        )
+        if price_match:
+            price = re.sub(r'[\s\u00a0]+', '', price_match.group(1))
+    currency = str(
+        offer.get('priceCurrency')
+        or parser.meta.get('product:price:currency')
+        or parser.meta.get('og:price:currency') or 'RUB'
+    ).strip()
+    return price, currency
 
 
 def _pinel_base_sku(sku):
@@ -588,11 +605,16 @@ def _pinel_search_variants(
         )
         card = products_html[card_start.start():end]
         title_match = re.search(
-            r'<a\b[^>]*href=["\'](?P<href>/catalog/sku/[^"\']+)["\']'
-            r'[^>]*class=["\'][^"\']*\bitem__title\b[^"\']*["\'][^>]*>'
-            r'(?P<name>.*?)</a>',
+            r'<a\b(?=[^>]*\bclass=["\'][^"\']*\bitem__title\b)'
+            r'(?P<attrs>[^>]*)>(?P<name>.*?)</a>',
             card,
             re.IGNORECASE | re.DOTALL,
+        )
+        title_attrs = title_match.group('attrs') if title_match else ''
+        href_match = re.search(
+            r'\bhref=["\'](?P<href>/catalog/sku/[^"\']+)["\']',
+            title_attrs,
+            re.IGNORECASE,
         )
         sku_match = re.search(
             r'item__vendor_code[^>]*>\s*Артикул:\s*([^<]+)</p>',
@@ -605,12 +627,12 @@ def _pinel_search_variants(
             card,
             re.IGNORECASE,
         )
-        if not title_match or not sku_match:
+        if not title_match or not href_match or not sku_match:
             continue
         candidate_sku = re.sub(r'\s+', '', sku_match.group(1))
         if _pinel_base_sku(candidate_sku) != base_sku:
             continue
-        url = parse.urljoin(final_url, title_match.group('href'))
+        url = parse.urljoin(final_url, href_match.group('href'))
         if url in seen_urls:
             continue
         seen_urls.add(url)
