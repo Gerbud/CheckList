@@ -816,6 +816,11 @@ class PriceTagLinksForm(forms.Form):
 
 
 class StorePriceTagTemplateForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Старые клиенты могут сохранять профиль без этого нового поля.
+        self.fields['promotion_background_color'].required = False
+
     def clean_site_domain(self):
         value = self.cleaned_data['site_domain'].strip().casefold()
         if '://' in value:
@@ -837,12 +842,23 @@ class StorePriceTagTemplateForm(forms.ModelForm):
             )
         return parse.urlencode(pairs)
 
+    def clean_promotion_background_color(self):
+        value = self.cleaned_data.get('promotion_background_color')
+        if value:
+            return value
+        if self.instance and self.instance.pk:
+            return self.instance.promotion_background_color
+        return StorePriceTagTemplate._meta.get_field(
+            'promotion_background_color',
+        ).get_default()
+
     class Meta:
         model = StorePriceTagTemplate
         fields = (
             'name', 'site_domain', 'logo',
             'category_detection_mode', 'layout_template',
-            'primary_color', 'accent_color', 'show_image',
+            'primary_color', 'accent_color', 'promotion_background_color',
+            'show_image',
             'show_sku', 'show_properties', 'max_properties', 'footer',
             'qr_utm_parameters', 'print_mode', 'is_active',
         )
@@ -860,6 +876,9 @@ class StorePriceTagTemplateForm(forms.ModelForm):
                 'type': 'color', 'class': 'form-control form-control-color',
             }),
             'accent_color': forms.TextInput(attrs={
+                'type': 'color', 'class': 'form-control form-control-color',
+            }),
+            'promotion_background_color': forms.TextInput(attrs={
                 'type': 'color', 'class': 'form-control form-control-color',
             }),
             'max_properties': forms.NumberInput(attrs={'class': 'form-control'}),

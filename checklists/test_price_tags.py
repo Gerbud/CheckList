@@ -510,13 +510,54 @@ def test_director_can_generate_and_edit_store_profile(
             'layout_template': StorePriceTagTemplate.LayoutTemplate.ES_AUTO,
             'primary_color': '#112233',
             'accent_color': '#ff6600',
+            'promotion_background_color': '#dbeafe',
             'max_properties': 4,
             'print_mode': StorePriceTagTemplate.PrintMode.COLOR,
         },
     )
     assert saved.status_code == 302
+    price_tag_setup['es_profile'].refresh_from_db()
+    assert price_tag_setup['es_profile'].promotion_background_color == '#dbeafe'
     profile_page = client.get(reverse('checklists:price_tag_profile'))
     assert 'Подпись на ценнике' not in profile_page.content.decode()
+
+
+def test_es_auto_promotion_uses_profile_background_color(
+    client,
+    price_tag_setup,
+    monkeypatch,
+):
+    profile = price_tag_setup['es_profile']
+    profile.promotion_background_color = '#dbeafe'
+    profile.save(update_fields=('promotion_background_color',))
+    StorePriceTagCategory.objects.create(
+        profile=profile,
+        name='Автобоксы',
+        source_url='https://example.test/catalog/',
+        promotion_title='Подарок к покупке',
+    )
+    monkeypatch.setattr(
+        'checklists.portal_views.import_product',
+        lambda url: ImportedProduct(
+            url=url,
+            name='Тестовый автобокс',
+            price='50000',
+            source_name='example.test',
+        ),
+    )
+    client.force_login(price_tag_setup['director'])
+
+    response = client.post(
+        reverse('checklists:director_price_tags'),
+        {
+            'action': 'generate',
+            'profile': profile.pk,
+            'urls': 'https://example.test/catalog/product/1/',
+        },
+    )
+
+    assert response.status_code == 200
+    assert '--tag-promotion-background: #dbeafe;' in response.content.decode()
 
 
 def test_admin_can_save_separate_store_template(client, price_tag_setup):

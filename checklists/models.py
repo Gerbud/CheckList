@@ -128,6 +128,13 @@ class StorePriceTagTemplate(models.Model):
         default='#f97316',
         validators=[color_validator],
     )
+    promotion_background_color = models.CharField(
+        'цвет фона акции',
+        max_length=7,
+        default='#fff7ed',
+        validators=[color_validator],
+        help_text='Используется для блока акции в шаблоне ES-AUTO.',
+    )
     show_image = models.BooleanField('показывать фото', default=True)
     show_sku = models.BooleanField('показывать артикул', default=True)
     show_properties = models.BooleanField(
