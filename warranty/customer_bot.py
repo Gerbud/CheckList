@@ -2,14 +2,19 @@ import base64
 import json
 import re
 import secrets
+import subprocess
+import tempfile
 from datetime import datetime
-from urllib import error, request
+from io import BytesIO
+from pathlib import Path
+from urllib import error, parse, request
 
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
+from PIL import Image, ImageOps
 
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerSession, WarrantyCustomerUpdate
@@ -55,7 +60,37 @@ def _download_photo(config, file_id):
     return content, content_type, path.rsplit('.', 1)[-1]
 
 
-def _recognize(config, content, content_type, kind):
+def _prepare_ocr_image(content):
+    try:
+        image = ImageOps.exif_transpose(Image.open(BytesIO(content))).convert('RGB')
+        image.thumbnail((1800, 1800))
+        output = BytesIO()
+        image.save(output, 'JPEG', quality=85, optimize=True)
+        return output.getvalue(), 'image/jpeg'
+    except (OSError, ValueError):
+        return content, 'image/jpeg'
+
+
+def _ocr_space(config, content, content_type):
+    if not config.ocr_space_api_key:
+        return ''
+    body = parse.urlencode({
+        'apikey': config.ocr_space_api_key,
+        'language': 'rus',
+        'OCREngine': '2',
+        'scale': 'true',
+        'isOverlayRequired': 'false',
+        'base64Image': f'data:{content_type};base64,{base64.b64encode(content).decode()}',
+    }).encode()
+    api_request = request.Request('https://api.ocr.space/parse/image', data=body)
+    with request.urlopen(api_request, timeout=45) as response:
+        data = json.loads(response.read())
+    if data.get('IsErroredOnProcessing'):
+        raise RuntimeError('OCR.space не смог распознать изображение.')
+    return '\n'.join(str(item.get('ParsedText') or '') for item in data.get('ParsedResults', []))
+
+
+def _openai_ocr(config, content, content_type, kind):
     if not config.ocr_api_key:
         return {}
     wanted = 'article и serial_number' if kind == 'label' else 'purchase_date'
@@ -63,7 +98,7 @@ def _recognize(config, content, content_type, kind):
         'model': config.ocr_model,
         'messages': [{'role': 'user', 'content': [
             {'type': 'text', 'text': f'Распознай {wanted}. Верни только JSON с ключами article, serial_number, purchase_date (YYYY-MM-DD). Не угадывай: неизвестное значение — пустая строка.'},
-            {'type': 'image_url', 'image_url': {'url': f'data:{content_type};base64,{base64.b64encode(content).decode()}'}}
+            {'type': 'image_url', 'image_url': {'url': f'data:{content_type};base64,{base64.b64encode(content).decode()}'}},
         ]}],
         'response_format': {'type': 'json_object'},
         'temperature': 0,
@@ -72,12 +107,69 @@ def _recognize(config, content, content_type, kind):
         'https://api.openai.com/v1/chat/completions', data=json.dumps(payload).encode(),
         headers={'Authorization': f'Bearer {config.ocr_api_key}', 'Content-Type': 'application/json'},
     )
+    with request.urlopen(api_request, timeout=45) as response:
+        data = json.loads(response.read())
+    result = json.loads(data['choices'][0]['message']['content'])
+    return result if isinstance(result, dict) else {}
+
+
+def _tesseract(config, content):
+    command = (config.tesseract_command or 'tesseract').strip()
+    if not command or Path(command).name != command and not Path(command).is_absolute():
+        return ''
     try:
-        with request.urlopen(api_request, timeout=45) as response:
-            response_data = json.loads(response.read())
-        return json.loads(response_data['choices'][0]['message']['content'])
-    except (error.URLError, TimeoutError, ValueError, KeyError, IndexError):
-        return {}
+        with tempfile.NamedTemporaryFile(suffix='.jpg') as source:
+            source.write(content)
+            source.flush()
+            result = subprocess.run(
+                [command, source.name, 'stdout', '-l', 'rus+eng', '--psm', '6'],
+                capture_output=True, text=True, timeout=45, check=False,
+            )
+        return result.stdout if result.returncode == 0 else ''
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
+        return ''
+
+
+def _extract_ocr_fields(text, kind):
+    normalized = ' '.join(str(text or '').replace('\x0c', ' ').split())
+    result = {'raw_text': normalized[:10000]}
+    if kind == 'label':
+        article = re.search(r'(?:артикул|арт\.?|article|item|model)\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9._/-]{2,})', normalized, re.I)
+        serial = re.search(r'(?:серийный(?:\s+номер)?|serial(?:\s+number)?|s[/\\]?n)\s*[:№#-]?\s*([A-ZА-Я0-9][A-ZА-Я0-9._/-]{3,})', normalized, re.I)
+        result.update(article=article.group(1) if article else '', serial_number=serial.group(1) if serial else '')
+    elif kind == 'receipt':
+        match = re.search(r'(?<!\d)([0-3]?\d)[.\-/]([01]?\d)[.\-/](20\d{2}|\d{2})(?!\d)', normalized)
+        if match:
+            year = match.group(3) if len(match.group(3)) == 4 else '20' + match.group(3)
+            try:
+                result['purchase_date'] = datetime(int(year), int(match.group(2)), int(match.group(1))).date().isoformat()
+            except ValueError:
+                result['purchase_date'] = ''
+    return result
+
+
+def _recognize(config, content, content_type, kind):
+    prepared, prepared_type = _prepare_ocr_image(content)
+    try:
+        result = _openai_ocr(config, prepared, prepared_type, kind)
+        if any(result.get(field) for field in ('article', 'serial_number', 'purchase_date')):
+            result['provider'] = 'openai'
+            return result
+    except (error.URLError, TimeoutError, ValueError, KeyError, IndexError, RuntimeError, json.JSONDecodeError):
+        pass
+    text = ''
+    try:
+        text = _ocr_space(config, prepared, prepared_type)
+    except (error.URLError, TimeoutError, ValueError, RuntimeError, json.JSONDecodeError):
+        pass
+    if not text:
+        text = _tesseract(config, prepared)
+        provider = 'tesseract'
+    else:
+        provider = 'ocr_space'
+    result = _extract_ocr_fields(text, kind)
+    result['provider'] = provider if text else 'none'
+    return result
 
 
 def _phone(value):

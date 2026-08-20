@@ -44,8 +44,22 @@ class WarrantyCustomerBotSettings(models.Model):
     bot_token = models.CharField('токен клиентского бота', max_length=255, blank=True)
     webhook_secret_token = models.CharField('секрет webhook', max_length=255, blank=True)
     is_enabled = models.BooleanField('бот включён', default=False)
-    ocr_api_key = models.CharField('ключ OpenAI для распознавания', max_length=255, blank=True)
-    ocr_model = models.CharField('модель распознавания', max_length=64, default='gpt-4.1-mini')
+    ocr_api_key = models.CharField(
+        'ключ OpenAI для распознавания', max_length=255, blank=True,
+        help_text='Основной способ распознавания. Если ключ пуст или сервис недоступен, используется OCR.space.',
+    )
+    ocr_model = models.CharField('модель OpenAI', max_length=64, default='gpt-4.1-mini')
+    ocr_space_api_key = models.CharField(
+        'бесплатный ключ OCR.space', max_length=255, blank=True,
+        help_text='Получите бесплатный ключ на https://ocr.space/ocrapi. При ошибке будет использован локальный Tesseract.',
+    )
+    tesseract_command = models.CharField(
+        'команда Tesseract', max_length=255, default='tesseract',
+        help_text='Путь или имя исполняемого файла. Используется только как резерв.',
+    )
+    webhook_url = models.URLField('адрес webhook', blank=True)
+    webhook_registered_at = models.DateTimeField('webhook зарегистрирован', null=True, blank=True)
+    webhook_last_error = models.TextField('ошибка webhook', blank=True)
     welcome_text = models.TextField('приветствие', default='Здравствуйте! Я помогу оформить гарантийное обращение. Пришлите фото этикетки изделия.')
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -63,6 +77,11 @@ class WarrantyCustomerBotSettings(models.Model):
             raise ValidationError('Допустима только одна настройка.')
         self.pk = 1
         return super().save(*args, **kwargs)
+
+    def clean(self):
+        value = self.webhook_secret_token.strip()
+        if value and not __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,256}', value):
+            raise ValidationError({'webhook_secret_token': 'Это не URL. Разрешены только латинские буквы, цифры, _ и -.'})
 
 
 class WarrantyCustomerSession(models.Model):

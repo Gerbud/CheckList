@@ -1,8 +1,11 @@
 from datetime import date
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.urls import reverse
 
-from warranty.customer_bot import _create_claim, _next_missing, _phone
+from warranty.customer_bot import _create_claim, _extract_ocr_fields, _next_missing, _phone, _recognize
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerSession
 
 
@@ -13,6 +16,51 @@ def test_phone_normalization():
     assert _phone('8 (999) 123-45-67') == '+79991234567'
     assert _phone('+7 999 123 45 67') == '+79991234567'
     assert _phone('123') == ''
+
+
+def test_ocr_text_fields_are_extracted():
+    label = _extract_ocr_fields('Артикул: GD40LM46SP Серийный номер: GW-2026-9911', 'label')
+    receipt = _extract_ocr_fields('КАССОВЫЙ ЧЕК 20.08.2026 14:31', 'receipt')
+    assert label['article'] == 'GD40LM46SP'
+    assert label['serial_number'] == 'GW-2026-9911'
+    assert receipt['purchase_date'] == '2026-08-20'
+
+
+def test_tesseract_is_used_when_free_ocr_fails(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_space_api_key = 'free-key'
+    monkeypatch.setattr('warranty.customer_bot._prepare_ocr_image', lambda content: (content, 'image/jpeg'))
+    monkeypatch.setattr('warranty.customer_bot._ocr_space', lambda *args: (_ for _ in ()).throw(RuntimeError('down')))
+    monkeypatch.setattr('warranty.customer_bot._tesseract', lambda *args: 'Артикул A-77 Серийный номер SN-991')
+    assert _recognize(config, b'image', 'image/jpeg', 'label')['serial_number'] == 'SN-991'
+
+
+def test_openai_has_priority_over_free_ocr(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    monkeypatch.setattr('warranty.customer_bot._prepare_ocr_image', lambda content: (content, 'image/jpeg'))
+    monkeypatch.setattr('warranty.customer_bot._openai_ocr', lambda *args: {'article': 'AI-1', 'serial_number': 'AI-SN'})
+    monkeypatch.setattr('warranty.customer_bot._ocr_space', lambda *args: pytest.fail('OCR.space should not be called'))
+    result = _recognize(config, b'image', 'image/jpeg', 'label')
+    assert result['article'] == 'AI-1'
+    assert result['provider'] == 'openai'
+
+
+def test_webhook_secret_is_not_a_url():
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.webhook_secret_token = 'https://example.com/webhook/'
+    with pytest.raises(ValidationError):
+        config.full_clean()
+
+
+def test_customer_bot_admin_has_webhook_buttons(client):
+    admin = get_user_model().objects.create_superuser('customer-bot-admin', 'admin@example.com', 'secret')
+    config = WarrantyCustomerBotSettings.get_solo()
+    client.force_login(admin)
+    response = client.get(reverse('admin:warranty_warrantycustomerbotsettings_change', args=[config.pk]))
+    assert response.status_code == 200
+    assert 'Создать webhook' in response.content.decode()
+    assert 'Проверить webhook' in response.content.decode()
 
 
 def test_missing_recognized_fields_are_requested_in_order():

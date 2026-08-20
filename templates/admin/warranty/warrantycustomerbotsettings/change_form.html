@@ -1,0 +1,14 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  <div class="submit-row">
+    <p class="deletelink-box">
+      <input type="submit" name="_delete_webhook" value="Удалить webhook">
+    </p>
+    <input type="submit" name="_check_webhook" value="Проверить webhook">
+    <input type="submit" name="_register_webhook" value="Создать webhook">
+  </div>
+  <p class="help">Адрес подставляется автоматически. В BotFather или другие настройки его вставлять не нужно.</p>
+{% endblock %}

@@ -1,5 +1,7 @@
 from django import forms
 from django.contrib import admin, messages
+from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
 from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
@@ -14,10 +16,66 @@ admin.site.register(WarrantyCustomerUpdate)
 
 @admin.register(WarrantyCustomerBotSettings)
 class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
-    fields = ('bot_token', 'webhook_secret_token', 'is_enabled', 'ocr_api_key', 'ocr_model', 'welcome_text')
+    change_form_template = 'admin/warranty/warrantycustomerbotsettings/change_form.html'
+    fields = (
+        'bot_token', 'is_enabled',
+        'ocr_api_key', 'ocr_model', 'ocr_space_api_key', 'tesseract_command', 'welcome_text',
+        'webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error',
+    )
+    readonly_fields = ('webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error')
+
+    @admin.display(description='секрет webhook')
+    def webhook_secret_status(self, obj):
+        return 'создан автоматически' if obj and obj.webhook_secret_token else 'будет создан кнопкой автоматически'
 
     def has_add_permission(self, request):
         return not WarrantyCustomerBotSettings.objects.exists()
+
+    def response_change(self, request, obj):
+        action = next((name for name in ('_register_webhook', '_check_webhook', '_delete_webhook') if name in request.POST), '')
+        if not action:
+            return super().response_change(request, obj)
+        if not obj.bot_token:
+            self.message_user(request, 'Сначала укажите токен клиентского бота.', messages.ERROR)
+            return super().response_change(request, obj)
+
+        from warranty.customer_bot import _telegram
+
+        webhook_url = request.build_absolute_uri(reverse('warranty:customer_bot_webhook')).replace('http://', 'https://', 1)
+        try:
+            if action == '_register_webhook':
+                obj.webhook_secret_token = __import__('secrets').token_urlsafe(32)
+                _telegram(obj, 'setWebhook', {
+                    'url': webhook_url,
+                    'secret_token': obj.webhook_secret_token,
+                    'allowed_updates': ['message', 'callback_query'],
+                    'drop_pending_updates': False,
+                })
+                obj.webhook_url = webhook_url
+                obj.webhook_registered_at = timezone.now()
+                obj.webhook_last_error = ''
+                self.message_user(request, f'Webhook создан: {webhook_url}', messages.SUCCESS)
+            elif action == '_check_webhook':
+                info = _telegram(obj, 'getWebhookInfo', {})
+                actual_url = str(info.get('url') or '')
+                pending = int(info.get('pending_update_count') or 0)
+                error = str(info.get('last_error_message') or '')
+                obj.webhook_url = actual_url
+                obj.webhook_last_error = error
+                level = messages.SUCCESS if actual_url == webhook_url and not error else messages.WARNING
+                self.message_user(request, f'Webhook: {actual_url or "не зарегистрирован"}. В очереди: {pending}.', level)
+            else:
+                _telegram(obj, 'deleteWebhook', {'drop_pending_updates': False})
+                obj.webhook_url = ''
+                obj.webhook_registered_at = None
+                obj.webhook_last_error = ''
+                self.message_user(request, 'Webhook удалён.', messages.SUCCESS)
+            obj.save()
+        except (RuntimeError, ValueError) as exc:
+            obj.webhook_last_error = str(exc)
+            obj.save(update_fields=('webhook_last_error', 'updated_at'))
+            self.message_user(request, f'Не удалось выполнить операцию: {exc}', messages.ERROR)
+        return super().response_change(request, obj)
 
 
 @admin.register(WarrantyClaim)
