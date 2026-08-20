@@ -44,7 +44,8 @@ def test_label_confirmation_contains_product_link_serial_and_receipt_request():
     )
     text = _label_confirmation(session)
     assert 'Триммер Greenworks' in text
-    assert 'https://pinel.ru/catalog/sku/111/' in text
+    assert '<a href="https://pinel.ru/catalog/sku/111/">Триммер Greenworks</a>' in text
+    assert 'Ссылка:' not in text
     assert 'SN-123' in text
     assert 'фото чека' in text
 

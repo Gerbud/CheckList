@@ -1,4 +1,5 @@
 import base64
+import html
 import json
 import re
 import secrets
@@ -604,14 +605,13 @@ def _label_confirmation(session, receipt_prompt=True):
     url = str(product.get('url') or '').strip()
     if not url and session.article:
         url = 'https://pinel.ru/search/?' + parse.urlencode({'q': session.article})
-    product_line = f'Товар: {name}'
-    if url:
-        product_line += f'\nСсылка: {url}'
+    safe_name = html.escape(name)
+    product_line = f'Товар: <a href="{html.escape(url, quote=True)}">{safe_name}</a>' if url else f'Товар: {safe_name}'
     article = session.article or 'не удалось распознать'
     serial = session.serial_number or 'не удалось распознать'
     text = (
         f'Отлично, товар найден 👍\n{product_line}\n'
-        f'Артикул: {article}\nСерийный номер: {serial}'
+        f'Артикул: {html.escape(article)}\nСерийный номер: {html.escape(serial)}'
     )
     return text + ('\n\nТеперь пришлите фото чека 🧾' if receipt_prompt else '')
 
@@ -704,12 +704,13 @@ def _handle_message(config, message):
                 config, session,
                 _label_confirmation(session, receipt_prompt=False)
                 + '\n\nПришлите остальные этикетки. Когда все товары добавлены, нажмите кнопку ниже — затем пришлёте общий чек.',
+                parse_mode='HTML',
                 reply_markup=_registration_labels_keyboard(),
             )
         else:
             session.step = session.Step.RECEIPT
             session.save()
-            _send(config, session, _label_confirmation(session))
+            _send(config, session, _label_confirmation(session), parse_mode='HTML')
     elif session.step == session.Step.WARRANTY_CARD and _save_photo(config, session, message, 'warranty_card'):
         _request_contacts(config, session)
     elif session.step == session.Step.RECEIPT and _save_photo(config, session, message, 'receipt'):
