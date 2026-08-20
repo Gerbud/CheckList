@@ -17,6 +17,39 @@ from warranty.telegram import _claim_message, _status_keyboard, record_warranty_
 import warranty.telegram as warranty_telegram
 
 
+@pytest.mark.django_db
+def test_bitrix_settings_is_system_admin_only_and_hides_secret(client, settings):
+    settings.BITRIX_WARRANTY_SYNC_URL = 'https://pinel.example/warranty-sync/'
+    settings.BITRIX_WARRANTY_SYNC_SECRET = 'must-never-be-rendered'
+    ordinary = User.objects.create_user('ordinary-bitrix')
+    client.force_login(ordinary)
+    assert client.get(reverse('warranty:bitrix_settings')).status_code == 403
+
+    admin = User.objects.create_user('bitrix-settings-admin')
+    EmployeeProfile.objects.create(user=admin, role=EmployeeProfile.Role.SYSTEM_ADMIN, is_active=True)
+    client.force_login(admin)
+    response = client.get(reverse('warranty:bitrix_settings'))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'https://pinel.example/warranty-sync/' in content
+    assert 'HMAC-секрет' in content
+    assert settings.BITRIX_WARRANTY_SYNC_SECRET not in content
+
+
+@pytest.mark.django_db
+def test_bitrix_settings_health_check(client, monkeypatch):
+    admin = User.objects.create_user('bitrix-health-admin')
+    EmployeeProfile.objects.create(user=admin, role=EmployeeProfile.Role.SYSTEM_ADMIN, is_active=True)
+    client.force_login(admin)
+
+    monkeypatch.setattr('warranty.views.BitrixWarrantyClient.call', lambda self, action: {'version': '1.0.0'})
+    response = client.post(reverse('warranty:bitrix_settings'), {'action': 'check'}, follow=True)
+
+    assert response.status_code == 200
+    assert 'Bitrix отвечает. Версия модуля: 1.0.0.' in response.content.decode()
+
+
 def test_warranty_telegram_settings_admin_only_shows_peer_id():
     model_admin = WarrantyTelegramSettingsAdmin(WarrantyTelegramSettings, AdminSite())
 

@@ -1,13 +1,64 @@
+from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
+from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from checklists.access_control import system_admin_required
+from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient, synchronize
 from warranty.forms import WarrantyClaimUpdateForm, WarrantyWorkItemForm
-from warranty.models import WarrantyClaim, WarrantyWorkItem
+from warranty.models import WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyWorkItem
 from warranty.services import update_claim
+
+
+@system_admin_required
+def bitrix_settings(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'check':
+            try:
+                result = BitrixWarrantyClient().call('health')
+            except BitrixSyncError as exc:
+                messages.error(request, str(exc))
+            else:
+                version = result.get('version') or 'не указана'
+                messages.success(request, f'Bitrix отвечает. Версия модуля: {version}.')
+        elif action == 'sync':
+            try:
+                result = synchronize()
+            except BitrixSyncError as exc:
+                state = WarrantyBitrixSyncState.get_solo()
+                state.last_error = str(exc)[:2000]
+                state.save(update_fields=('last_error', 'updated_at'))
+                messages.error(request, str(exc))
+            else:
+                messages.success(
+                    request,
+                    'Синхронизация завершена: получено {imported}, отправлено {sent}, ошибок {errors}.'.format(**result),
+                )
+        else:
+            return HttpResponseForbidden('Неизвестное действие.')
+        return redirect('warranty:bitrix_settings')
+
+    state = WarrantyBitrixSyncState.get_solo()
+    outbox_counts = {
+        row['status']: row['total']
+        for row in WarrantyBitrixOutbox.objects.values('status').annotate(total=Count('id'))
+    }
+    sync_url = settings.BITRIX_WARRANTY_SYNC_URL
+    return render(request, 'warranty/bitrix_settings.html', {
+        'portal': 'system_admin',
+        'state': state,
+        'sync_url': sync_url,
+        'url_configured': bool(sync_url),
+        'secret_configured': bool(settings.BITRIX_WARRANTY_SYNC_SECRET),
+        'timeout': settings.BITRIX_WARRANTY_SYNC_TIMEOUT,
+        'pending_count': outbox_counts.get(WarrantyBitrixOutbox.Status.PENDING, 0),
+        'error_count': outbox_counts.get(WarrantyBitrixOutbox.Status.ERROR, 0),
+        'sent_count': outbox_counts.get(WarrantyBitrixOutbox.Status.SENT, 0),
+    })
 
 
 @system_admin_required

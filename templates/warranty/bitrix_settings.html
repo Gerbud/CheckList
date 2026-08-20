@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Настройки Bitrix{% endblock %}
+{% block portal_content %}
+<div class="mb-3">
+    <h1 class="h3 mb-1">Интеграция с Bitrix</h1>
+    <div class="text-secondary">Двусторонняя синхронизация гарантийных обращений через модуль <code>pinel.warrantysync</code></div>
+</div>
+
+{% if not url_configured or not secret_configured %}
+<div class="alert alert-warning">Интеграция настроена не полностью. URL и общий HMAC-секрет задаются в защищённом <code>.env</code> сервера.</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="card p-3 h-100"><div class="small text-secondary">Подключение</div><div class="fs-5 fw-semibold">{% if url_configured and secret_configured %}Настроено{% else %}Не настроено{% endif %}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="card p-3 h-100"><div class="small text-secondary">В очереди</div><div class="summary-value">{{ pending_count }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="card p-3 h-100"><div class="small text-secondary">Ошибки отправки</div><div class="summary-value">{{ error_count }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="card p-3 h-100"><div class="small text-secondary">Отправлено</div><div class="summary-value">{{ sent_count }}</div></div></div>
+</div>
+
+<section class="card p-3 mb-3">
+    <h2 class="h5">Подключение</h2>
+    <dl class="row mb-0">
+        <dt class="col-sm-4">Endpoint</dt><dd class="col-sm-8"><code>{{ sync_url|default:"не задан" }}</code></dd>
+        <dt class="col-sm-4">HMAC-секрет</dt><dd class="col-sm-8">{% if secret_configured %}настроен, значение скрыто{% else %}не задан{% endif %}</dd>
+        <dt class="col-sm-4">Тайм-аут</dt><dd class="col-sm-8">{{ timeout }} сек.</dd>
+        <dt class="col-sm-4">Разрешённая запись</dt><dd class="col-sm-8"><code>UF_STATUS</code>, <code>UF_COMMENT</code></dd>
+    </dl>
+</section>
+
+<section class="card p-3 mb-3">
+    <h2 class="h5">Состояние синхронизации</h2>
+    <dl class="row mb-3">
+        <dt class="col-sm-4">Последний успешный обмен</dt><dd class="col-sm-8">{{ state.last_success_at|date:"d.m.Y H:i:s"|default:"ещё не выполнялся" }}</dd>
+        <dt class="col-sm-4">Курсор обращений</dt><dd class="col-sm-8">{{ state.claim_cursor }}</dd>
+        <dt class="col-sm-4">Курсор истории</dt><dd class="col-sm-8">{{ state.history_cursor }}</dd>
+        <dt class="col-sm-4">Последняя ошибка</dt><dd class="col-sm-8">{{ state.last_error|default:"—" }}</dd>
+    </dl>
+    <div class="d-flex flex-wrap gap-2">
+        <form method="post">{% csrf_token %}<button class="btn btn-outline-primary" name="action" value="check">Проверить подключение</button></form>
+        <form method="post">{% csrf_token %}<button class="btn btn-primary" name="action" value="sync">Запустить синхронизацию</button></form>
+    </div>
+</section>
+
+<div class="alert alert-info mb-0">URL и секрет намеренно не редактируются через браузер. Их изменение выполняется в серверном <code>.env</code>, чтобы секрет не попадал в базу данных и интерфейс.</div>
+{% endblock %}

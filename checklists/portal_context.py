@@ -63,6 +63,7 @@ SECTION_TITLES = {
     'telegram_chats': 'Чаты и Topics',
     'telegram_users': 'Привязки',
     'telegram_queue': 'Очередь',
+    'bitrix_settings': 'Настройки Bitrix',
 }
 
 

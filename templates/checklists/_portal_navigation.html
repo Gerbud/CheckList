@@ -8,6 +8,8 @@
     <a href="{% url 'checklists:system_reports' %}">Сводка магазинов</a>
     <a href="{% url 'checklists:system_tasks' %}">Все задачи</a>
     <a href="{% url 'warranty:claim_list' %}">Гарантийные обращения</a>
+    <div class="small text-uppercase text-secondary px-2 pt-3 pb-1">Настройки</div>
+    <a href="{% url 'warranty:bitrix_settings' %}">Bitrix</a>
     {% if managed_store %}
     <div class="small text-uppercase text-secondary px-2 pt-3 pb-1">Выбранный магазин</div>
     <div class="small px-2 pb-1">{{ managed_store.name }} · {{ managed_store.code }}</div>
