@@ -54,13 +54,15 @@ def _forum_topic_icons():
 
 
 def _topic_icon_id(status):
+    configured = WarrantyTelegramStatusIcon.objects.filter(
+        status=status,
+    ).values('emoji', 'custom_emoji_id').first() or {}
+    if configured.get('custom_emoji_id'):
+        return configured['custom_emoji_id']
     icons = _forum_topic_icons()
     if not icons:
         raise TelegramAPIError('Telegram не вернул доступные иконки тем.')
-    desired = WarrantyTelegramStatusIcon.objects.filter(
-        status=status,
-    ).values_list('emoji', flat=True).first()
-    desired = desired or DEFAULT_TOPIC_STATUS_EMOJI.get(
+    desired = configured.get('emoji') or DEFAULT_TOPIC_STATUS_EMOJI.get(
         status, DEFAULT_TOPIC_STATUS_EMOJI['new'],
     )
     exact = next((icon_id for emoji, icon_id in icons if emoji == desired), '')

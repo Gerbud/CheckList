@@ -1,0 +1,41 @@
+.telegram-emoji-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 10px;
+    max-width: 720px;
+}
+
+.telegram-emoji-picker > div {
+    margin: 0;
+}
+
+.telegram-emoji-picker label {
+    align-items: center;
+    background: var(--body-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    font-size: 30px;
+    height: 58px;
+    justify-content: center;
+    padding: 4px;
+    transition: border-color .15s, background-color .15s, transform .15s;
+}
+
+.telegram-emoji-picker label:hover {
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.telegram-emoji-picker label:has(input:checked) {
+    background: color-mix(in srgb, var(--primary) 14%, var(--body-bg));
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.telegram-emoji-picker input {
+    height: 16px;
+    margin: 0 6px 0 0;
+    width: 16px;
+}

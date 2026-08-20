@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin, messages
 from django.utils.html import format_html, format_html_join
 
@@ -92,8 +93,67 @@ class WarrantyTelegramStatusButtonAdmin(admin.ModelAdmin):
 @admin.register(WarrantyTelegramStatusIcon)
 class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
     list_display = ('status', 'emoji', 'updated_at')
-    list_editable = ('emoji',)
     ordering = ('status',)
+    readonly_fields = ('status',)
+
+    class StatusIconForm(forms.ModelForm):
+        telegram_icon = forms.ChoiceField(
+            label='Иконка темы',
+            widget=forms.RadioSelect(attrs={'class': 'telegram-emoji-picker'}),
+            help_text='Показаны только иконки, которые Telegram разрешает для тем.',
+        )
+
+        class Meta:
+            model = WarrantyTelegramStatusIcon
+            fields = ('telegram_icon',)
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            from checklists.telegram_client import TelegramAPIError
+            from warranty.telegram import _forum_topic_icons
+
+            current_id = self.instance.custom_emoji_id if self.instance.pk else ''
+            current_emoji = self.instance.emoji if self.instance.pk else ''
+            try:
+                icons = _forum_topic_icons()
+            except TelegramAPIError:
+                icons = ((current_emoji, current_id),) if current_id else ()
+                self.fields['telegram_icon'].help_text = (
+                    'Не удалось получить список иконок из Telegram. '
+                    'Попробуйте открыть страницу позже.'
+                )
+            self.icon_by_id = {icon_id: emoji for emoji, icon_id in icons}
+            self.fields['telegram_icon'].choices = [
+                (icon_id, emoji) for emoji, icon_id in icons
+            ]
+            if current_id in self.icon_by_id:
+                self.initial['telegram_icon'] = current_id
+            elif current_emoji:
+                matching_id = next((
+                    icon_id for icon_id, emoji in self.icon_by_id.items()
+                    if emoji == current_emoji
+                ), '')
+                if matching_id:
+                    self.initial['telegram_icon'] = matching_id
+
+        def save(self, commit=True):
+            obj = super().save(commit=False)
+            obj.custom_emoji_id = self.cleaned_data['telegram_icon']
+            obj.emoji = self.icon_by_id[obj.custom_emoji_id]
+            if commit:
+                obj.save()
+            return obj
+
+    form = StatusIconForm
+
+    class Media:
+        css = {'all': ('warranty/admin_status_icon.css',)}
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)

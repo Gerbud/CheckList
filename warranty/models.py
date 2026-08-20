@@ -160,6 +160,9 @@ class WarrantyTelegramStatusIcon(models.Model):
         'смайлик', max_length=32,
         help_text='Смайлик должен быть доступен среди иконок тем Telegram.',
     )
+    custom_emoji_id = models.CharField(
+        'Telegram custom emoji ID', max_length=128, blank=True,
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

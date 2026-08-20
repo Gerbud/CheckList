@@ -10,8 +10,8 @@ from django.urls import reverse
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.admin import WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin
-from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
+from warranty.admin import WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin, WarrantyTelegramStatusIconAdmin
+from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
@@ -104,6 +104,37 @@ def test_warranty_telegram_settings_admin_only_shows_peer_id():
     assert model_admin.get_fields(None) == (
         'peer_id', 'use_forum_topics', 'is_enabled',
     )
+
+
+@pytest.mark.django_db
+def test_status_icon_admin_form_offers_only_telegram_icons(monkeypatch):
+    icon, _ = WarrantyTelegramStatusIcon.objects.update_or_create(
+        status=WarrantyClaim.Status.NEW,
+        defaults={
+            'emoji': '📰',
+            'custom_emoji_id': 'newspaper-id',
+        },
+    )
+    monkeypatch.setattr(warranty_telegram, '_forum_topic_icons', lambda: (
+        ('📰', 'newspaper-id'),
+        ('⭐', 'star-id'),
+    ))
+
+    form = WarrantyTelegramStatusIconAdmin.StatusIconForm(instance=icon)
+
+    assert list(form.fields['telegram_icon'].choices) == [
+        ('newspaper-id', '📰'),
+        ('star-id', '⭐'),
+    ]
+    assert form.initial['telegram_icon'] == 'newspaper-id'
+
+    bound_form = WarrantyTelegramStatusIconAdmin.StatusIconForm(
+        {'telegram_icon': 'star-id'}, instance=icon,
+    )
+    assert bound_form.is_valid(), bound_form.errors
+    updated = bound_form.save()
+    assert updated.emoji == '⭐'
+    assert updated.custom_emoji_id == 'star-id'
 
 
 @pytest.mark.django_db
@@ -799,11 +830,9 @@ def test_topic_sync_uses_status_custom_emoji(monkeypatch):
 
 @pytest.mark.django_db
 def test_configured_status_emoji_is_used_for_topic_icon(monkeypatch):
-    from warranty.models import WarrantyTelegramStatusIcon
-
     WarrantyTelegramStatusIcon.objects.update_or_create(
         status=WarrantyClaim.Status.READY,
-        defaults={'emoji': '🎉'},
+        defaults={'emoji': '🎉', 'custom_emoji_id': 'party-icon'},
     )
     claim = WarrantyClaim.objects.create(
         external_id=871, status=WarrantyClaim.Status.READY,
@@ -816,10 +845,6 @@ def test_configured_status_emoji_is_used_for_topic_icon(monkeypatch):
 
     def fake_send(method, payload, **kwargs):
         calls.append((method, payload))
-        if method == 'getForumTopicIconStickers':
-            return SimpleNamespace(data={'result': [
-                {'emoji': '🎉', 'custom_emoji_id': 'party-icon'},
-            ]})
         return SimpleNamespace(data={'result': True})
 
     warranty_telegram._forum_topic_icons.cache_clear()
@@ -839,6 +864,7 @@ def test_configured_status_emoji_is_used_for_topic_icon(monkeypatch):
         'message_thread_id': 4601,
         'icon_custom_emoji_id': 'party-icon',
     })
+    assert all(method != 'getForumTopicIconStickers' for method, _ in calls)
 
 
 @pytest.mark.django_db
