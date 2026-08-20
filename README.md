@@ -204,10 +204,12 @@ python manage.py process_telegram_queue --retry-failed --store-code store-1
 активном webhook и доступен в режиме `polling` либо с диагностическим
 параметром `--force`.
 
-Единая cron-команда для Beget:
+Единая cron-команда для Beget. Все периодические задачи проекта находятся в
+`run_beget_cron.sh`; новые задачи следует добавлять в этот файл, не создавая
+отдельные записи в панели хостинга:
 
 ```cron
-* * * * * cd /home/a/autobud/checklist/public_html/django_app && /home/a/autobud/checklist/public_html/django_venv/bin/python manage.py process_telegram_inbound_queue --limit 50 >> /home/a/autobud/checklist/telegram_cron.log 2>&1; /home/a/autobud/checklist/public_html/django_venv/bin/python manage.py schedule_telegram_notifications >> /home/a/autobud/checklist/telegram_cron.log 2>&1; /home/a/autobud/checklist/public_html/django_venv/bin/python manage.py process_telegram_queue --limit 50 >> /home/a/autobud/checklist/telegram_cron.log 2>&1
+* * * * * /home/a/autobud/checklist/public_html/django_app/run_beget_cron.sh >> /home/a/autobud/checklist/cron.log 2>&1
 ```
 
 Команды безопасны при конкурентном запуске: `update_id` и
