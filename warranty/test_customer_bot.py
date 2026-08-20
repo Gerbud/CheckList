@@ -31,6 +31,7 @@ def test_main_menu_has_greenworks_consultation_button():
 def test_product_question_is_reduced_to_catalog_keywords():
     assert _product_search_query('Какой триммер Greenworks выбрать для небольшого участка?') == 'триммер Greenworks'
     assert _product_search_query('Нужна газонокосилка 40V для 6 соток') == 'газонокосилка 40V Greenworks'
+    assert _product_search_query('Как поменять шпулю?') == 'триммер Greenworks'
 
 
 def test_product_consultation_uses_its_own_session_mode(monkeypatch):
@@ -47,6 +48,7 @@ def test_product_consultation_uses_its_own_session_mode(monkeypatch):
     assert session.mode == session.Mode.CONSULTATION
     assert session.step == session.Step.CONSULTATION
     assert 'Greenworks' in sent[-1]
+    assert '/start' not in sent[-1]
 
 
 def test_consultation_message_is_answered_by_openai_not_support(monkeypatch):
