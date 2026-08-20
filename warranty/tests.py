@@ -208,6 +208,7 @@ def test_existing_topic_update_edits_only_recorded_intro(monkeypatch):
     intro = WarrantyTelegramMessage.objects.create(
         thread=thread, telegram_message_id='1000', direction='outbound',
         sender_name='Telegram bot', text='Старый текст',
+        payload={'message_thread_id': 500},
     )
     WarrantyTelegramMessage.objects.create(
         thread=thread, telegram_message_id='1001', direction='inbound',
@@ -233,7 +234,7 @@ def test_existing_topic_update_edits_only_recorded_intro(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_legacy_topic_gets_one_repair_type_note(monkeypatch):
+def test_current_topic_intro_is_selected_over_legacy_bot_message(monkeypatch):
     claim = WarrantyClaim.objects.create(
         external_id=93,
         warranty_type=WarrantyClaim.WarrantyType.NON_WARRANTY,
@@ -244,20 +245,19 @@ def test_legacy_topic_gets_one_repair_type_note(monkeypatch):
     )
     WarrantyTelegramMessage.objects.create(
         thread=thread, telegram_message_id='1002', direction='outbound',
-        sender_name='Telegram bot', text='Старый текст',
+        sender_name='Telegram bot', text='Старое сообщение',
+        payload={'message_thread_id': 400},
+    )
+    current = WarrantyTelegramMessage.objects.create(
+        thread=thread, telegram_message_id='502', direction='outbound',
+        sender_name='Telegram bot', text='Текущее первое сообщение',
+        payload={'message_thread_id': 501},
     )
     calls = []
 
     def fake_send(method, payload, **kwargs):
         calls.append((method, payload))
-        if method == 'editMessageText':
-            raise warranty_telegram.TelegramAPIError(
-                'Bad Request: message to edit not found',
-                status_code=400, retryable=False,
-            )
-        return SimpleNamespace(data={'result': {
-            'message_id': 2000, 'message_thread_id': 501,
-        }})
+        return SimpleNamespace(data={'result': True})
 
     monkeypatch.setattr(
         warranty_telegram, '_config',
@@ -267,10 +267,10 @@ def test_legacy_topic_gets_one_repair_type_note(monkeypatch):
 
     assert update_claim_topic_message(thread) is True
 
-    note = thread.messages.get(sender_name='Telegram bot: repair type')
-    assert note.telegram_message_id == '2000'
-    assert 'Не по гарантии' in note.text
-    assert [method for method, _ in calls] == ['editMessageText', 'sendMessage']
+    current.refresh_from_db()
+    assert calls[0][1]['message_id'] == 502
+    assert 'Не по гарантии' in current.text
+    assert [method for method, _ in calls] == ['editMessageText']
 
 
 @pytest.mark.django_db

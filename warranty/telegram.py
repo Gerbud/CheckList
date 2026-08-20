@@ -167,10 +167,21 @@ def _claim_message(claim):
 
 
 def _claim_intro_message(thread):
-    return thread.messages.filter(
+    candidates = thread.messages.filter(
         direction='outbound',
         sender_name='Telegram bot',
-    ).exclude(telegram_message_id='').order_by('sent_at', 'id').first()
+    ).exclude(telegram_message_id='').order_by('-sent_at', '-id')
+    topic_id = str(thread.topic_id)
+    for message in candidates:
+        payload_topic_id = str(message.payload.get('message_thread_id') or '')
+        if payload_topic_id == topic_id:
+            return message
+    if topic_id.isdigit():
+        expected_message_id = str(int(topic_id) + 1)
+        for message in candidates:
+            if message.telegram_message_id == expected_message_id:
+                return message
+    return None
 
 
 def update_claim_topic_message(thread, *, bot=None):
@@ -205,71 +216,12 @@ def update_claim_topic_message(thread, *, bot=None):
             or 'message is not modified' in error_text
         ):
             pass
-        elif exc.status_code == 400 and 'message to edit not found' in error_text:
-            return update_claim_repair_type_note(thread, bot=bot)
         else:
             raise
     if intro.text != text:
         intro.text = text
         intro.edited_at = timezone.now()
         intro.save(update_fields=('text', 'edited_at'))
-    return True
-
-
-def update_claim_repair_type_note(thread, *, bot=None):
-    """Add one idempotent note when a legacy introduction is no longer editable."""
-    warranty, configured_bot = _config()
-    bot = bot or configured_bot
-    sender_name = 'Telegram bot: repair type'
-    note = thread.messages.filter(
-        direction='outbound', sender_name=sender_name,
-    ).exclude(telegram_message_id='').order_by('id').first()
-    text = f'🛠 <b>Тип ремонта:</b> {html.escape(thread.claim.get_warranty_type_display())}'
-    if note:
-        if note.text == text:
-            return True
-        try:
-            send_telegram_request(
-                'editMessageText',
-                {
-                    'chat_id': warranty.chat_id,
-                    'message_id': int(note.telegram_message_id),
-                    'text': text,
-                    'parse_mode': 'HTML',
-                },
-                system_settings=bot, quick=True, retry_on_failure=False,
-            )
-        except TelegramAPIError as exc:
-            error_text = str(exc).lower()
-            if exc.status_code != 400 or not (
-                'message_not_modified' in error_text
-                or 'message is not modified' in error_text
-            ):
-                raise
-        if note.text != text:
-            note.text = text
-            note.edited_at = timezone.now()
-            note.save(update_fields=('text', 'edited_at'))
-        return True
-    response = send_telegram_request(
-        'sendMessage',
-        {
-            'chat_id': warranty.chat_id,
-            'message_thread_id': int(thread.topic_id),
-            'text': text,
-            'parse_mode': 'HTML',
-        },
-        system_settings=bot, quick=True, retry_on_failure=False,
-    )
-    result = response.data.get('result') or {}
-    WarrantyTelegramMessage.objects.create(
-        thread=thread,
-        telegram_message_id=str(result.get('message_id') or ''),
-        direction='outbound',
-        sender_name=sender_name,
-        text=text,
-        payload=result if isinstance(result, dict) else {},
-    )
     return True
 
 
