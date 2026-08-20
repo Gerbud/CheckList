@@ -131,8 +131,17 @@ def _claim_message(claim):
         f'<a href="{html.escape(phone_href, quote=True)}">{phone_text}</a>'
         if phone_href else phone_text
     )
+    purchased_from_us = 'Да' if claim.purchased_from_us else 'Нет'
+    product_location = (
+        'у клиента'
+        if claim.product_remains_with_customer
+        else 'в сервисном центре'
+    )
     return (
         f'<b>Гарантийное обращение №{claim.external_id}</b>{claim_link}\n\n'
+        f'<b>Статус:</b> {html.escape(claim.get_status_display())}\n'
+        f'<b>Куплено у нас:</b> {purchased_from_us}\n'
+        f'<b>Товар находится:</b> {product_location}\n\n'
         f'<b>Товар</b>\n{product}\n\n'
         f'<b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
         f'<b>Телефон:</b> {phone}\n\n'

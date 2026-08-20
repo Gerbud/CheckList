@@ -114,11 +114,14 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     settings.WARRANTY_CLAIM_URL_TEMPLATE = 'https://pinel.example/claims/?search_str={claim_id}'
     claim = WarrantyClaim.objects.create(
         external_id=81,
+        status=WarrantyClaim.Status.DIAGNOSTICS,
         product_name='Дрель & шуруповёрт',
         external_product_id='2178',
         customer_name='Иван <Иванов>',
         phone='+7 (999) 123-45-67',
         defect='Не включается',
+        purchased_from_us=True,
+        product_remains_with_customer=True,
     )
 
     message = _claim_message(claim)
@@ -128,6 +131,23 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     assert '<a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>' in message
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
     assert 'Иван &lt;Иванов&gt;' in message
+    assert '<b>Статус:</b> Диагностика' in message
+    assert '<b>Куплено у нас:</b> Да' in message
+    assert '<b>Товар находится:</b> у клиента' in message
+
+
+@pytest.mark.django_db
+def test_telegram_claim_message_shows_service_center_location():
+    claim = WarrantyClaim.objects.create(
+        external_id=90,
+        purchased_from_us=False,
+        product_remains_with_customer=False,
+    )
+
+    message = _claim_message(claim)
+
+    assert '<b>Куплено у нас:</b> Нет' in message
+    assert '<b>Товар находится:</b> в сервисном центре' in message
 
 
 @pytest.mark.django_db
