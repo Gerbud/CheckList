@@ -131,9 +131,10 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     assert '<a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>' in message
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
     assert 'Иван &lt;Иванов&gt;' in message
-    assert '<b>Статус:</b> Диагностика' in message
+    assert '🏷 <b>Статус:</b> Диагностика #статус_диагностика' in message
     assert '<b>Куплено у нас:</b> Да' in message
     assert '<b>Товар находится:</b> у клиента' in message
+    assert message.endswith('🔗 <a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>')
 
 
 @pytest.mark.django_db

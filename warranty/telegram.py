@@ -26,6 +26,17 @@ TOPIC_STATUS_EMOJI = {
     'closed': '🔒',
 }
 
+CLAIM_STATUS_HASHTAG = {
+    'new': '#статус_новый',
+    'service_decision': '#статус_решение_сц',
+    'in_progress': '#статус_в_работе',
+    'customer_wait': '#статус_ожидаем_клиента',
+    'diagnostics': '#статус_диагностика',
+    'parts_wait': '#статус_ожидаем_запчасти',
+    'ready': '#статус_готов_к_выдаче',
+    'closed': '#статус_закрыт',
+}
+
 
 @lru_cache(maxsize=1)
 def _forum_topic_icons():
@@ -116,7 +127,7 @@ def _phone_href(phone):
 def _claim_message(claim):
     claim_url = _claim_url(claim)
     claim_link = (
-        f'\n<a href="{html.escape(claim_url, quote=True)}">Открыть обращение на сайте</a>'
+        f'🔗 <a href="{html.escape(claim_url, quote=True)}">Открыть обращение на сайте</a>'
         if claim_url else ''
     )
     product_name = html.escape(claim.product_name or '—')
@@ -137,15 +148,19 @@ def _claim_message(claim):
         if claim.product_remains_with_customer
         else 'в сервисном центре'
     )
+    status_hashtag = CLAIM_STATUS_HASHTAG.get(
+        claim.status, '#статус_неизвестен',
+    )
     return (
-        f'<b>Гарантийное обращение №{claim.external_id}</b>{claim_link}\n\n'
-        f'<b>Статус:</b> {html.escape(claim.get_status_display())}\n'
-        f'<b>Куплено у нас:</b> {purchased_from_us}\n'
-        f'<b>Товар находится:</b> {product_location}\n\n'
-        f'<b>Товар</b>\n{product}\n\n'
-        f'<b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
-        f'<b>Телефон:</b> {phone}\n\n'
-        f'<b>Неисправность</b>\n{html.escape(claim.defect or "—")}'
+        f'🛡 <b>Гарантийное обращение №{claim.external_id}</b>\n\n'
+        f'🏷 <b>Статус:</b> {html.escape(claim.get_status_display())} {status_hashtag}\n'
+        f'🏪 <b>Куплено у нас:</b> {purchased_from_us}\n'
+        f'📍 <b>Товар находится:</b> {product_location}\n\n'
+        f'📦 <b>Товар</b>\n{product}\n\n'
+        f'👤 <b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
+        f'📞 <b>Телефон:</b> {phone}\n\n'
+        f'🛠 <b>Неисправность</b>\n{html.escape(claim.defect or "—")}\n\n'
+        f'{claim_link}'
     )
 
 
