@@ -2,7 +2,6 @@ from datetime import date
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
 from django.urls import reverse
 
 from warranty.customer_bot import _create_claim, _extract_ocr_fields, _next_missing, _phone, _recognize
@@ -46,13 +45,6 @@ def test_openai_has_priority_over_free_ocr(monkeypatch):
     assert result['provider'] == 'openai'
 
 
-def test_webhook_secret_is_not_a_url():
-    config = WarrantyCustomerBotSettings.get_solo()
-    config.webhook_secret_token = 'https://example.com/webhook/'
-    with pytest.raises(ValidationError):
-        config.full_clean()
-
-
 def test_customer_bot_admin_has_webhook_buttons(client):
     admin = get_user_model().objects.create_superuser('customer-bot-admin', 'admin@example.com', 'secret')
     config = WarrantyCustomerBotSettings.get_solo()
@@ -61,6 +53,31 @@ def test_customer_bot_admin_has_webhook_buttons(client):
     assert response.status_code == 200
     assert 'Создать webhook' in response.content.decode()
     assert 'Проверить webhook' in response.content.decode()
+
+
+def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
+    admin = get_user_model().objects.create_superuser('webhook-admin', 'webhook@example.com', 'secret')
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.bot_token = 'new-token'
+    config.webhook_secret_token = 'https://legacy.example/webhook/'
+    config.save()
+    calls = []
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda obj, method, payload: calls.append((method, payload)) or True)
+    client.force_login(admin)
+    response = client.post(
+        reverse('admin:warranty_warrantycustomerbotsettings_change', args=[config.pk]),
+        {
+            'bot_token': 'new-token', 'is_enabled': 'on', 'ocr_api_key': '',
+            'ocr_model': 'gpt-4.1-mini', 'ocr_space_api_key': '',
+            'tesseract_command': 'tesseract', 'welcome_text': 'Здравствуйте!',
+            '_register_webhook': 'Создать webhook',
+        },
+    )
+    assert response.status_code == 302
+    config.refresh_from_db()
+    assert not config.webhook_secret_token.startswith('http')
+    assert calls[0][0] == 'setWebhook'
+    assert calls[0][1]['secret_token'] == config.webhook_secret_token
 
 
 def test_missing_recognized_fields_are_requested_in_order():

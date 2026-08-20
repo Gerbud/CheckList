@@ -78,12 +78,6 @@ class WarrantyCustomerBotSettings(models.Model):
         self.pk = 1
         return super().save(*args, **kwargs)
 
-    def clean(self):
-        value = self.webhook_secret_token.strip()
-        if value and not __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,256}', value):
-            raise ValidationError({'webhook_secret_token': 'Это не URL. Разрешены только латинские буквы, цифры, _ и -.'})
-
-
 class WarrantyCustomerSession(models.Model):
     class Step(models.TextChoices):
         LABEL = 'label', 'Фото этикетки'
