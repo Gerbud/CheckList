@@ -238,7 +238,9 @@ def _openai_product_answer(config, question, products, search_url, history=()):
         'Характеристики конкретного товара, цену, комплектность и наличие бери только из контекста pinel.ru и не придумывай. '
         'Никогда не упоминай, не сравнивай и не рекомендуй конкурирующие бренды, магазины и маркетплейсы. '
         'Рекомендуй только Greenworks с pinel.ru. Не давай ссылки на сторонние сайты, видео и поисковики. '
-        'В каждом ответе дай хотя бы одну уместную полную ссылку на pinel.ru. Ссылки бери дословно только из контекста. '
+        'Никогда не показывай клиенту внутреннюю ссылку поиска pinel.ru с /search/. Давай ссылку только на прямую '
+        'карточку товара или подходящую информационную страницу из контекста. Если прямой страницы нет, не давай ссылку. '
+        'Ссылки бери дословно только из контекста. '
         'Не начинай ответ с фразы об отсутствии информации в контексте, если можешь дать полезный общий ответ. '
         'Не используй Markdown-таблицы.'
     )
@@ -258,12 +260,10 @@ def _openai_product_answer(config, question, products, search_url, history=()):
     with request.urlopen(api_request, timeout=45) as response:
         data = json.loads(response.read())
     answer = str(data['choices'][0]['message']['content']).strip()
-    allowed_urls = {search_url, *(item.get('url', '') for item in products)}
+    allowed_urls = {item.get('url', '') for item in products}
     for url in re.findall(r'https?://[^\s)>\]]+', answer):
-        if url.rstrip('.,') not in allowed_urls:
+        if url.rstrip('.,') not in allowed_urls or '/search/' in url:
             answer = answer.replace(url, '')
-    if 'pinel.ru' not in answer:
-        answer = f'{answer}\n\nПосмотреть на pinel.ru: {search_url}'
     return answer[:4000]
 
 
@@ -313,6 +313,10 @@ def _is_claim_status_question(question):
         re.search(r'\b(?:рекламац\w*|обращени\w*|ремонт\w*)\b', question, re.I)
         and re.search(r'\b(?:статус\w*|что\s+с|есть\s+ли|готов\w*|когда|где|провер\w*|узна\w*)\b', question, re.I)
     )
+
+
+def _is_privacy_question(question):
+    return bool(re.search(r'\b(?:политик\w*\s+(?:конфиденциальност\w*|обработк\w*\s+данн\w*)|персональн\w*\s+данн\w*)\b', question, re.I))
 
 
 def _refresh_claim_cache():
@@ -379,8 +383,22 @@ def _answer_claim_status(config, session, question, customer_message_id=''):
     return True
 
 
+def _answer_known_pinel_page(config, session, question, customer_message_id=''):
+    if not _is_privacy_question(question):
+        return False
+    answer = (
+        'Политика обработки персональных данных магазина Pinel опубликована на отдельной странице:\n'
+        f'{config.privacy_policy_url}'
+    )
+    sent = _send(config, session, answer, disable_web_page_preview=True)
+    _record_consultation(session, question, answer, customer_message_id, sent)
+    return True
+
+
 def _consult_about_product(config, session, question, customer_message_id=''):
     if _answer_claim_status(config, session, question, customer_message_id):
+        return
+    if _answer_known_pinel_page(config, session, question, customer_message_id):
         return
     if not config.product_consultation_enabled or not config.ocr_api_key:
         _send(
@@ -391,6 +409,11 @@ def _consult_about_product(config, session, question, customer_message_id=''):
     try:
         products, search_url = _pinel_product_context(question)
         history = list(session.raw_ocr_data.get('consultation_history') or [])
+        if not products:
+            answer = 'Не нашёл на сайте Pinel подтверждённой информации по этому вопросу. Передать вопрос специалисту?'
+            sent = _send(config, session, answer, reply_markup=_consultation_keyboard())
+            _record_consultation(session, question, answer, customer_message_id, sent)
+            return
         answer = _openai_product_answer(config, question, products, search_url, history)
     except (ProductImportError, error.URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError):
         _send(

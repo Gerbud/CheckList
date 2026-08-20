@@ -154,7 +154,7 @@ def test_ai_dialogue_is_shared_with_support_and_message_id_is_saved(monkeypatch)
     assert any('Как заменить шпулю?' in call[1].get('text', '') for call in calls if call[0] == 'sendMessage')
 
 
-def test_product_answer_removes_external_links_and_adds_pinel_source(monkeypatch):
+def test_product_answer_removes_external_and_internal_search_links(monkeypatch):
     config = WarrantyCustomerBotSettings.get_solo()
     config.ocr_api_key = 'openai-key'
     response = {'choices': [{'message': {'content': 'Подойдёт эта модель. https://competitor.example/item'}}]}
@@ -169,7 +169,39 @@ def test_product_answer_removes_external_links_and_adds_pinel_source(monkeypatch
         config, 'Нужен триммер', [], 'https://pinel.ru/search/?q=trimmer',
     )
     assert 'competitor.example' not in answer
-    assert 'https://pinel.ru/search/?q=trimmer' in answer
+    assert '/search/' not in answer
+
+
+def test_privacy_question_uses_direct_policy_page_not_site_search(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='725', chat_id='726', mode=WarrantyCustomerSession.Mode.CONSULTATION,
+        step=WarrantyCustomerSession.Step.CONSULTATION,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)) or {'message_id': 903})
+    monkeypatch.setattr('warranty.customer_bot._pinel_product_context', lambda *args: pytest.fail('known page must not use product search'))
+    _consult_about_product(config, session, 'Где политика конфиденциальности?', 902)
+    assert 'https://pinel.ru/privacy-policy/' in sent[-1][0]
+    assert '/search/' not in sent[-1][0]
+
+
+def test_missing_site_information_is_escalated_without_search_link(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='727', chat_id='728', mode=WarrantyCustomerSession.Mode.CONSULTATION,
+        step=WarrantyCustomerSession.Step.CONSULTATION,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._pinel_product_context', lambda question: ([], 'https://pinel.ru/search/?q=unknown'))
+    monkeypatch.setattr('warranty.customer_bot._openai_product_answer', lambda *args: pytest.fail('missing site data must not use OpenAI'))
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)) or {'message_id': 904})
+    _consult_about_product(config, session, 'Где неизвестная инструкция?', 903)
+    assert 'Не нашёл' in sent[-1][0]
+    assert '/search/' not in sent[-1][0]
+    assert 'consultation:support' in str(sent[-1][1]['reply_markup'])
 
 
 def test_support_button_invites_customer_to_write_here(monkeypatch):
