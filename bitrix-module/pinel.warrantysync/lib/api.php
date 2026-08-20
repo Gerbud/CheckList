@@ -24,11 +24,13 @@ final class Api
         switch ($action) {
             case 'health':
                 self::assertSchema();
-                return array('module' => self::MODULE_ID, 'version' => '1.0.0');
+                return array('module' => self::MODULE_ID, 'version' => '1.1.0');
             case 'claims.list':
                 return self::listClaims($payload);
             case 'claims.update':
                 return self::updateClaim($payload);
+            case 'claims.files.add':
+                return self::addClaimFile($payload);
             default:
                 throw new \InvalidArgumentException('Неизвестное действие.');
         }
@@ -181,5 +183,65 @@ final class Api
             throw $exception;
         }
         return array('id' => $id, 'updated' => array_keys($fields));
+    }
+
+    private static function addClaimFile(array $payload)
+    {
+        self::assertSchema();
+        $id = (int)(isset($payload['id']) ? $payload['id'] : 0);
+        $file = isset($payload['file']) && is_array($payload['file']) ? $payload['file'] : array();
+        $name = basename((string)(isset($file['name']) ? $file['name'] : ''));
+        $contentType = (string)(isset($file['contentType']) ? $file['contentType'] : 'application/octet-stream');
+        $encoded = (string)(isset($file['contentBase64']) ? $file['contentBase64'] : '');
+        $checksum = strtolower((string)(isset($file['checksumSha256']) ? $file['checksumSha256'] : ''));
+        if ($id < 1 || $name === '' || !preg_match('/^[a-f0-9]{64}$/', $checksum)) {
+            throw new \InvalidArgumentException('Некорректные параметры файла.');
+        }
+        $content = base64_decode($encoded, true);
+        if ($content === false || strlen($content) > 20 * 1024 * 1024 || hash('sha256', $content) !== $checksum) {
+            throw new \InvalidArgumentException('Некорректное содержимое файла.');
+        }
+        $connection = self::connection();
+        $row = $connection->query('SELECT UF_OTHER_FILES FROM warranty WHERE ID=' . $id)->fetch();
+        if (!$row) {
+            throw new \InvalidArgumentException('Обращение не найдено.');
+        }
+        $fileIds = array_values(array_filter(explode('/', (string)$row['UF_OTHER_FILES'])));
+        foreach ($fileIds as $fileId) {
+            $existing = \CFile::GetFileArray((int)$fileId);
+            if (!$existing || (int)$existing['FILE_SIZE'] !== strlen($content)) {
+                continue;
+            }
+            $path = $_SERVER['DOCUMENT_ROOT'] . (string)$existing['SRC'];
+            if (is_file($path) && hash_file('sha256', $path) === $checksum) {
+                return array('id' => $id, 'fileId' => (int)$fileId, 'duplicate' => true);
+            }
+        }
+        $tmp = tempnam(sys_get_temp_dir(), 'warranty-sync-');
+        if ($tmp === false || file_put_contents($tmp, $content) === false) {
+            throw new \RuntimeException('Не удалось подготовить файл к сохранению.');
+        }
+        try {
+            $fileId = (int)\CFile::SaveFile(array(
+                'name' => $name,
+                'type' => $contentType,
+                'tmp_name' => $tmp,
+                'size' => strlen($content),
+                'MODULE_ID' => self::MODULE_ID,
+            ), 'warranty');
+        } finally {
+            if (is_file($tmp)) {
+                unlink($tmp);
+            }
+        }
+        if ($fileId < 1) {
+            throw new \RuntimeException('Bitrix не сохранил файл.');
+        }
+        $fileIds[] = (string)$fileId;
+        $helper = $connection->getSqlHelper();
+        $connection->queryExecute(
+            "UPDATE warranty SET UF_OTHER_FILES='" . $helper->forSql(implode('/', $fileIds)) . "' WHERE ID=" . $id
+        );
+        return array('id' => $id, 'fileId' => $fileId, 'duplicate' => false);
     }
 }

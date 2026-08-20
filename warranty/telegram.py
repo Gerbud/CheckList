@@ -316,6 +316,9 @@ def _save_message_attachments(thread, message):
             attachment.size = len(content)
             attachment.source_path = f"telegram:{entry['file_id']}"
             attachment.file.save(file_name[:255], ContentFile(content), save=True)
+        if settings.BITRIX_WARRANTY_SYNC_URL and settings.BITRIX_WARRANTY_SYNC_SECRET:
+            from warranty.bitrix_sync import BitrixWarrantyClient
+            BitrixWarrantyClient().add_attachment(thread.claim.external_id, attachment)
         saved.append(attachment)
     return saved
 

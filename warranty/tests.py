@@ -212,6 +212,8 @@ def test_warranty_topic_message_is_recorded_by_ids():
 @pytest.mark.django_db
 def test_telegram_document_is_attached_to_topic_claim(monkeypatch, settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path
+    settings.BITRIX_WARRANTY_SYNC_URL = 'https://pinel.example/warranty-sync/'
+    settings.BITRIX_WARRANTY_SYNC_SECRET = 'test-secret'
     claim = WarrantyClaim.objects.create(external_id=83)
     thread = WarrantyTelegramThread.objects.create(
         claim=claim,
@@ -245,6 +247,11 @@ def test_telegram_document_is_attached_to_topic_claim(monkeypatch, settings, tmp
         '_download_telegram_file',
         lambda file_id, bot: (downloads.append(file_id) or b'image-content', 'documents/defect.jpg'),
     )
+    uploaded = []
+    monkeypatch.setattr(
+        'warranty.bitrix_sync.BitrixWarrantyClient.add_attachment',
+        lambda self, claim_id, attachment: uploaded.append((claim_id, attachment.original_name)),
+    )
 
     assert record_warranty_update(update) is True
     assert record_warranty_update(update) is True
@@ -255,6 +262,10 @@ def test_telegram_document_is_attached_to_topic_claim(monkeypatch, settings, tmp
     assert attachment.file.read() == b'image-content'
     assert attachment.source_path == 'telegram:telegram-file-id'
     assert downloads == ['telegram-file-id']
+    assert uploaded == [
+        (claim.external_id, 'defect.jpg'),
+        (claim.external_id, 'defect.jpg'),
+    ]
     saved = WarrantyTelegramMessage.objects.get(thread=thread)
     assert saved.payload['attachments'][0]['file_unique_id'] == 'stable-file-id'
 

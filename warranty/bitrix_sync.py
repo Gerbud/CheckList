@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -87,6 +88,28 @@ class BitrixWarrantyClient:
         if not result.get('ok'):
             raise BitrixSyncError(result.get('error') or 'Bitrix вернул неизвестную ошибку.')
         return result.get('result', {})
+
+    def add_attachment(self, claim_id, attachment):
+        if not attachment.file:
+            raise BitrixSyncError('У вложения нет локального файла для отправки в Bitrix.')
+        attachment.file.open('rb')
+        try:
+            content = attachment.file.read()
+        finally:
+            attachment.file.close()
+        checksum = hashlib.sha256(content).hexdigest()
+        if attachment.checksum_sha256 != checksum:
+            attachment.checksum_sha256 = checksum
+            attachment.save(update_fields=('checksum_sha256',))
+        return self.call('claims.files.add', {
+            'id': claim_id,
+            'file': {
+                'name': attachment.original_name or attachment.file.name.rsplit('/', 1)[-1],
+                'contentType': attachment.content_type or 'application/octet-stream',
+                'contentBase64': base64.b64encode(content).decode('ascii'),
+                'checksumSha256': checksum,
+            },
+        })
 
 
 @transaction.atomic
