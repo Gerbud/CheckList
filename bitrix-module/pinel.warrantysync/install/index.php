@@ -23,14 +23,38 @@ class pinel_warrantysync extends CModule
     public function DoInstall()
     {
         ModuleManager::registerModule($this->MODULE_ID);
+        $this->InstallEvents();
         $this->InstallFiles();
     }
 
     public function DoUninstall()
     {
+        $this->UnInstallEvents();
         $this->UnInstallFiles();
         COption::RemoveOption($this->MODULE_ID);
         ModuleManager::unRegisterModule($this->MODULE_ID);
+    }
+
+    public function InstallEvents()
+    {
+        foreach (array('WarrantyOnAfterAdd', 'WarrantyOnAfterUpdate') as $event) {
+            RegisterModuleDependences(
+                '', $event, $this->MODULE_ID,
+                'Pinel\\WarrantySync\\Notifier', 'handleWarrantyEvent'
+            );
+        }
+        return true;
+    }
+
+    public function UnInstallEvents()
+    {
+        foreach (array('WarrantyOnAfterAdd', 'WarrantyOnAfterUpdate') as $event) {
+            UnRegisterModuleDependences(
+                '', $event, $this->MODULE_ID,
+                'Pinel\\WarrantySync\\Notifier', 'handleWarrantyEvent'
+            );
+        }
+        return true;
     }
 
     public function InstallFiles()

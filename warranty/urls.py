@@ -9,6 +9,7 @@ app_name = 'warranty'
 urlpatterns = [
     path('service/', service_home, name='service_home'),
     path('customer-bot/webhook/', customer_bot_webhook, name='customer_bot_webhook'),
+    path('bitrix/webhook/', views.bitrix_webhook, name='bitrix_webhook'),
     path('settings/bitrix/', views.bitrix_settings, name='bitrix_settings'),
     path('', views.claim_list, name='claim_list'),
     path('<int:claim_id>/', views.claim_detail, name='claim_detail'),

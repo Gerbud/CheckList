@@ -1,9 +1,15 @@
+import hashlib
+import hmac
+import json
+import time
+
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from checklists.access_control import system_admin_required
@@ -11,6 +17,44 @@ from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient, synchron
 from warranty.forms import WarrantyClaimUpdateForm, WarrantyWorkItemForm
 from warranty.models import WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyWorkItem
 from warranty.services import update_claim
+from warranty.telegram import sync_warranty_topics
+
+
+@csrf_exempt
+@require_POST
+def bitrix_webhook(request):
+    """Accept a signed change notification and immediately drain both sync stages."""
+    secret = settings.BITRIX_WARRANTY_SYNC_SECRET
+    if not secret or len(request.body) > 64 * 1024:
+        return JsonResponse({'ok': False, 'error': 'Webhook недоступен.'}, status=403)
+    timestamp = request.headers.get('X-Warranty-Timestamp', '')
+    signature = request.headers.get('X-Warranty-Signature', '')
+    if not timestamp.isdigit() or abs(time.time() - int(timestamp)) > 300:
+        return JsonResponse({'ok': False, 'error': 'Запрос просрочен.'}, status=401)
+    expected = hmac.new(
+        secret.encode(), timestamp.encode() + b'.' + request.body, hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        return JsonResponse({'ok': False, 'error': 'Неверная подпись.'}, status=401)
+    try:
+        payload = json.loads(request.body)
+    except (TypeError, ValueError):
+        return JsonResponse({'ok': False, 'error': 'Некорректный JSON.'}, status=400)
+    if not isinstance(payload, dict) or payload.get('event') not in {
+        'claim.added', 'claim.updated', 'claim.file_added',
+    }:
+        return JsonResponse({'ok': False, 'error': 'Неизвестное событие.'}, status=400)
+    try:
+        bitrix_result = synchronize(limit=500)
+        telegram_result = sync_warranty_topics(limit=200)
+    except (BitrixSyncError, RuntimeError) as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)[:500]}, status=502)
+    return JsonResponse({
+        'ok': True,
+        'eventId': str(payload.get('eventId') or '')[:128],
+        'bitrix': bitrix_result,
+        'telegram': telegram_result,
+    })
 
 
 @system_admin_required

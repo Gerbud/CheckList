@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import json
+import time
 from io import StringIO
 from types import SimpleNamespace
 
@@ -17,6 +20,83 @@ from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
 from warranty.greenworks import base_article, drawing_links_for_claim, parse_catalog_page
 import warranty.telegram as warranty_telegram
+
+
+def bitrix_webhook_headers(body, secret, timestamp=None):
+    timestamp = str(timestamp or int(time.time()))
+    signature = hmac.new(
+        secret.encode(), timestamp.encode() + b'.' + body, hashlib.sha256,
+    ).hexdigest()
+    return {
+        'HTTP_X_WARRANTY_TIMESTAMP': timestamp,
+        'HTTP_X_WARRANTY_SIGNATURE': signature,
+    }
+
+
+@pytest.mark.django_db
+def test_bitrix_webhook_runs_import_before_telegram_sync(client, settings, monkeypatch):
+    settings.BITRIX_WARRANTY_SYNC_SECRET = 'w' * 32
+    body = json.dumps({
+        'event': 'claim.updated', 'claimId': 42, 'eventId': 'claim.updated:42:test',
+    }, separators=(',', ':')).encode()
+    calls = []
+    monkeypatch.setattr(
+        'warranty.views.synchronize',
+        lambda limit: calls.append(('bitrix', limit)) or {'imported': 1, 'sent': 0, 'errors': 0},
+    )
+    monkeypatch.setattr(
+        'warranty.views.sync_warranty_topics',
+        lambda limit: calls.append(('telegram', limit)) or {'created': 0, 'closed': 1},
+    )
+
+    response = client.post(
+        reverse('warranty:bitrix_webhook'), body,
+        content_type='application/json',
+        **bitrix_webhook_headers(body, settings.BITRIX_WARRANTY_SYNC_SECRET),
+    )
+
+    assert response.status_code == 200
+    assert response.json()['eventId'] == 'claim.updated:42:test'
+    assert calls == [('bitrix', 500), ('telegram', 200)]
+
+
+@pytest.mark.django_db
+def test_bitrix_webhook_rejects_bad_signature_and_unknown_event(client, settings, monkeypatch):
+    settings.BITRIX_WARRANTY_SYNC_SECRET = 'w' * 32
+    body = b'{"event":"claim.updated","claimId":42}'
+    monkeypatch.setattr('warranty.views.synchronize', lambda limit: pytest.fail('must not sync'))
+
+    response = client.post(
+        reverse('warranty:bitrix_webhook'), body,
+        content_type='application/json',
+        HTTP_X_WARRANTY_TIMESTAMP=str(int(time.time())),
+        HTTP_X_WARRANTY_SIGNATURE='bad',
+    )
+    assert response.status_code == 401
+
+    unknown = b'{"event":"unknown","claimId":42}'
+    response = client.post(
+        reverse('warranty:bitrix_webhook'), unknown,
+        content_type='application/json',
+        **bitrix_webhook_headers(unknown, settings.BITRIX_WARRANTY_SYNC_SECRET),
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_initial_import_of_closed_claim_does_not_plan_live_telegram_topic():
+    import_claim_rows([{
+        'ID': 142,
+        'UF_STATUS': '3',
+        'UF_PRODUCT_NAME': 'Закрытое обращение',
+        'HISTORY': [],
+        'FILES': [],
+    }])
+
+    thread = WarrantyTelegramThread.objects.get(claim__external_id=142)
+    assert thread.state == WarrantyTelegramThread.State.ARCHIVED
+    assert thread.topic_id == ''
+    assert thread.archived_at is not None
 
 
 def test_greenworks_catalog_merges_drawings_for_same_article():

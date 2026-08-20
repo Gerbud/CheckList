@@ -15,10 +15,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
     if ($secret !== '') {
         COption::SetOptionString($moduleId, 'secret', $secret);
     }
+    COption::SetOptionString($moduleId, 'webhook_active', isset($_POST['webhook_active']) ? 'Y' : 'N');
+    $webhookUrl = trim((string)(isset($_POST['webhook_url']) ? $_POST['webhook_url'] : ''));
+    if ($webhookUrl === '' || preg_match('~^https://~i', $webhookUrl)) {
+        COption::SetOptionString($moduleId, 'webhook_url', $webhookUrl);
+    }
 }
 
 $active = COption::GetOptionString($moduleId, 'active', 'N');
 $secretConfigured = COption::GetOptionString($moduleId, 'secret', '') !== '';
+$webhookActive = COption::GetOptionString($moduleId, 'webhook_active', 'N');
+$webhookUrl = COption::GetOptionString($moduleId, 'webhook_url', '');
 ?>
 <form method="post">
     <?=bitrix_sessid_post()?>
@@ -35,6 +42,14 @@ $secretConfigured = COption::GetOptionString($moduleId, 'secret', '') !== '';
                     <?=$secretConfigured ? 'Секрет настроен. Оставьте поле пустым, чтобы не менять его.' : 'Укажите случайную строку длиной не менее 32 символов.'?>
                 </div></div>
             </td>
+        </tr>
+        <tr>
+            <td>Отправлять webhook:</td>
+            <td><input type="checkbox" name="webhook_active" value="Y" <?=$webhookActive === 'Y' ? 'checked' : ''?>></td>
+        </tr>
+        <tr>
+            <td>Адрес webhook Django:</td>
+            <td><input type="url" name="webhook_url" size="80" value="<?=htmlspecialcharsbx($webhookUrl)?>" placeholder="https://checklist.es-helper.ru/warranty/bitrix/webhook/"></td>
         </tr>
         <tr>
             <td>Адрес API:</td>

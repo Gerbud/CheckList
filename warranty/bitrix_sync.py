@@ -157,7 +157,19 @@ def import_claim_rows(rows):
         )
         WarrantyTelegramThread.objects.get_or_create(
             claim=claim,
-            defaults={'title': f'Гарантия #{external_id}: {claim.product_name}'[:255]},
+            defaults={
+                'title': f'Гарантия #{external_id}: {claim.product_name}'[:255],
+                'state': (
+                    WarrantyTelegramThread.State.ARCHIVED
+                    if claim.status == WarrantyClaim.Status.CLOSED
+                    else WarrantyTelegramThread.State.PLANNED
+                ),
+                'archived_at': (
+                    timezone.now()
+                    if claim.status == WarrantyClaim.Status.CLOSED
+                    else None
+                ),
+            },
         )
         new_history_events = []
         for event in row.get('HISTORY', []):

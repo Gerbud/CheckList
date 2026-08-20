@@ -25,7 +25,7 @@ final class Api
         switch ($action) {
             case 'health':
                 self::assertSchema();
-                return array('module' => self::MODULE_ID, 'version' => '1.2.0');
+                return array('module' => self::MODULE_ID, 'version' => '1.3.0');
             case 'claims.list':
                 return self::listClaims($payload);
             case 'claims.update':
@@ -187,6 +187,7 @@ final class Api
             $connection->rollbackTransaction();
             throw $exception;
         }
+        Notifier::notify('claim.updated', $id);
         return array('id' => $id, 'updated' => array_keys($fields));
     }
 
@@ -257,6 +258,7 @@ final class Api
         $connection->queryExecute(
             "UPDATE warranty SET UF_OTHER_FILES='" . $helper->forSql(implode('/', $fileIds)) . "' WHERE ID=" . $id
         );
+        Notifier::notify('claim.file_added', $id);
         return array('id' => $id, 'fileId' => $fileId, 'duplicate' => false);
     }
 
@@ -293,6 +295,7 @@ final class Api
         $connection->queryExecute('INSERT INTO warranty (' . implode(',', $names) . ') VALUES (' . implode(',', $values) . ')');
         $id = (int)$connection->getInsertedId();
         if ($id < 1) throw new \RuntimeException('Bitrix не создал обращение.');
+        Notifier::notify('claim.added', $id);
         return array('id' => $id);
     }
 
