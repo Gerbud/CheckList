@@ -101,6 +101,7 @@ def test_site_claim_update_is_queued_for_bitrix():
 @pytest.mark.django_db
 def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     settings.WARRANTY_PRODUCT_URL_TEMPLATE = 'https://shop.example/catalog/sku/{product_id}/'
+    settings.WARRANTY_CLAIM_URL_TEMPLATE = 'https://pinel.example/claims/?search_str={claim_id}'
     claim = WarrantyClaim.objects.create(
         external_id=81,
         product_name='Дрель & шуруповёрт',
@@ -114,6 +115,7 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
 
     assert '<a href="https://shop.example/catalog/sku/2178/">Дрель &amp; шуруповёрт</a>' in message
     assert 'Открыть товар' not in message
+    assert '<a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>' in message
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
     assert 'Иван &lt;Иванов&gt;' in message
 

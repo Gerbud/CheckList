@@ -37,12 +37,26 @@ def _product_url(claim):
     return template.format(product_id=product_id)
 
 
+def _claim_url(claim):
+    template = getattr(
+        settings,
+        'WARRANTY_CLAIM_URL_TEMPLATE',
+        'https://pinel.ru/personal/warranty-claims-list/?search_str={claim_id}',
+    )
+    return template.format(claim_id=claim.external_id) if template else ''
+
+
 def _phone_href(phone):
     value = re.sub(r'[^\d+]', '', phone or '')
     return f'tel:{value}' if value else ''
 
 
 def _claim_message(claim):
+    claim_url = _claim_url(claim)
+    claim_link = (
+        f'\n<a href="{html.escape(claim_url, quote=True)}">Открыть обращение на сайте</a>'
+        if claim_url else ''
+    )
     product_name = html.escape(claim.product_name or '—')
     product_url = _product_url(claim)
     product = (
@@ -56,7 +70,7 @@ def _claim_message(claim):
         if phone_href else phone_text
     )
     return (
-        f'<b>Гарантийное обращение №{claim.external_id}</b>\n\n'
+        f'<b>Гарантийное обращение №{claim.external_id}</b>{claim_link}\n\n'
         f'<b>Товар</b>\n{product}\n\n'
         f'<b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
         f'<b>Телефон:</b> {phone}\n\n'
