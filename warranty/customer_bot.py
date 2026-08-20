@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from checklists.price_tags import ProductImportError, find_pinel_product, format_product_price, import_product, search_pinel_products
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
+from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
 class OpenAIModelUnavailable(RuntimeError):
@@ -300,7 +300,69 @@ def _consultation_keyboard():
     ]]}
 
 
+def _record_consultation(session, question, answer, customer_message_id, sent):
+    return WarrantyCustomerConsultationMessage.objects.create(
+        session=session, question=question[:4000], answer=answer,
+        customer_message_id=str(customer_message_id or ''),
+        assistant_message_id=str((sent or {}).get('message_id') or '') if isinstance(sent, dict) else '',
+    )
+
+
+def _is_claim_status_question(question):
+    return bool(
+        re.search(r'\b(?:рекламац\w*|обращени\w*|ремонт\w*)\b', question, re.I)
+        and re.search(r'\b(?:статус\w*|что\s+с|есть\s+ли|готов\w*|когда|где|провер\w*|узна\w*)\b', question, re.I)
+    )
+
+
+def _customer_claims(session, question=''):
+    claim_ids = {session.external_claim_id} if session.external_claim_id else set()
+    profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id).first()
+    customer_phone = _phone(session.phone or (profile.phone if profile else ''))
+    claims = []
+    for claim in WarrantyClaim.objects.only(
+        'external_id', 'status', 'product_name', 'article', 'phone', 'source_created_at',
+    ).order_by('-source_created_at', '-external_id'):
+        if claim.external_id in claim_ids or (customer_phone and _phone(claim.phone) == customer_phone):
+            claims.append(claim)
+        if len(claims) >= 5:
+            break
+    identifiers = re.findall(r'\b(?=[A-ZА-Я0-9-]*\d)[A-ZА-Я0-9][A-ZА-Я0-9-]{4,}\b', question, re.I)
+    if identifiers:
+        return [
+            claim for claim in claims
+            if any(
+                identifier.casefold() in f'{claim.article} {claim.product_name}'.casefold()
+                or (identifier.isdigit() and int(identifier) == claim.external_id)
+                for identifier in identifiers
+            )
+        ]
+    return claims
+
+
+def _answer_claim_status(config, session, question, customer_message_id=''):
+    if not _is_claim_status_question(question):
+        return False
+    claims = _customer_claims(session, question)
+    if not claims:
+        answer = 'По вашему Telegram-профилю активных или ранее созданных рекламаций не найдено.'
+        sent = _send(config, session, answer)
+        _record_consultation(session, question, answer, customer_message_id, sent)
+        return True
+    rows = []
+    for claim in claims:
+        product = claim.product_name or (f'артикул {claim.article}' if claim.article else 'товар не указан')
+        rows.append(f'• Рекламация №{claim.external_id}: {product}\n  Статус: {claim.get_status_display()}')
+    answer = 'Нашёл ваши рекламации:\n\n' + '\n\n'.join(rows)
+    answer += '\n\nЕсли хотите уточнить детали или сроки, передайте этот диалог специалисту кнопкой ниже.'
+    sent = _send(config, session, answer, reply_markup=_consultation_keyboard())
+    _record_consultation(session, question, answer, customer_message_id, sent)
+    return True
+
+
 def _consult_about_product(config, session, question, customer_message_id=''):
+    if _answer_claim_status(config, session, question, customer_message_id):
+        return
     if not config.product_consultation_enabled or not config.ocr_api_key:
         _send(
             config, session, 'Консультант временно недоступен. Можно передать вопрос специалисту.',
@@ -326,11 +388,7 @@ def _consult_about_product(config, session, question, customer_message_id=''):
         config, session, answer, disable_web_page_preview=True,
         reply_markup=_consultation_keyboard(),
     )
-    WarrantyCustomerConsultationMessage.objects.create(
-        session=session, question=question[:4000], answer=answer,
-        customer_message_id=str(customer_message_id or ''),
-        assistant_message_id=str((sent or {}).get('message_id') or '') if isinstance(sent, dict) else '',
-    )
+    _record_consultation(session, question, answer, customer_message_id, sent)
 
 
 def _tesseract(config, content):

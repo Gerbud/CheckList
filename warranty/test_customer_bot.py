@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
+from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
 pytestmark = pytest.mark.django_db
@@ -80,6 +80,48 @@ def test_ai_dialogue_is_saved_with_both_telegram_message_ids(monkeypatch):
     assert saved.customer_message_id == '901'
     assert saved.assistant_message_id == '902'
     assert saved.question == 'Вопрос клиента'
+
+
+def test_claim_status_question_reports_that_customer_has_no_claims(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='735', chat_id='736', mode=WarrantyCustomerSession.Mode.CONSULTATION,
+        step=WarrantyCustomerSession.Step.CONSULTATION,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)) or {'message_id': 905})
+    monkeypatch.setattr('warranty.customer_bot._openai_product_answer', lambda *args: pytest.fail('claim status must not use OpenAI'))
+    _consult_about_product(config, session, 'Что с моей рекламацией?', 904)
+    assert 'не найдено' in sent[-1][0]
+    assert 'reply_markup' not in sent[-1][1]
+    assert WarrantyCustomerConsultationMessage.objects.filter(session=session).count() == 1
+
+
+def test_claim_status_question_returns_real_status_and_support_option(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='737', chat_id='738', mode=WarrantyCustomerSession.Mode.CONSULTATION,
+        step=WarrantyCustomerSession.Step.CONSULTATION,
+    )
+    WarrantyCustomerProfile.objects.create(
+        telegram_user_id='737', chat_id='738', phone='+7 (999) 123-45-67',
+        consent_version='1.0', consent_text='Согласие', consent_accepted_at=timezone.now(),
+    )
+    WarrantyClaim.objects.create(
+        external_id=1501, phone='8 999 123 45 67', product_name='Снегоуборщик Greenworks GD40STK5',
+        article='2600007UG', status=WarrantyClaim.Status.IN_PROGRESS,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)) or {'message_id': 907})
+    monkeypatch.setattr('warranty.customer_bot._openai_product_answer', lambda *args: pytest.fail('claim status must not use OpenAI'))
+    _consult_about_product(config, session, 'Что с моей рекламацией по снегоуборщику?', 906)
+    text, kwargs = sent[-1]
+    assert '№1501' in text
+    assert 'В работе' in text
+    assert 'GD40STK5' in text
+    assert 'consultation:support' in str(kwargs['reply_markup'])
 
 
 def test_ai_dialogue_is_shared_with_support_and_message_id_is_saved(monkeypatch):
