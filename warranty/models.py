@@ -41,6 +41,14 @@ class WarrantyTelegramSettings(models.Model):
 
 
 class WarrantyCustomerBotSettings(models.Model):
+    OPENAI_MODEL_CHOICES = (
+        ('gpt-4.1-nano', 'GPT-4.1 nano — самый дешёвый'),
+        ('gpt-4.1-mini', 'GPT-4.1 mini — баланс цены и качества'),
+        ('gpt-4.1', 'GPT-4.1 — максимальное качество серии'),
+        ('gpt-4o-mini', 'GPT-4o mini — экономичный'),
+        ('gpt-4o', 'GPT-4o — высокое качество'),
+    )
+    OPENAI_CHEAPEST_MODEL = 'gpt-4.1-nano'
     bot_token = models.CharField('токен клиентского бота', max_length=255, blank=True)
     webhook_secret_token = models.CharField('секрет webhook', max_length=255, blank=True)
     is_enabled = models.BooleanField('бот включён', default=False)
@@ -48,7 +56,11 @@ class WarrantyCustomerBotSettings(models.Model):
         'ключ OpenAI для распознавания', max_length=255, blank=True,
         help_text='Основной способ распознавания. Если ключ пуст или сервис недоступен, используется OCR.space.',
     )
-    ocr_model = models.CharField('модель OpenAI', max_length=64, default='gpt-4.1-mini')
+    ocr_model = models.CharField(
+        'модель OpenAI', max_length=64, choices=OPENAI_MODEL_CHOICES,
+        default='gpt-4.1-mini',
+        help_text='Если выбранную модель отключат, бот автоматически переключится на GPT-4.1 nano.',
+    )
     ocr_space_api_key = models.CharField(
         'бесплатный ключ OCR.space', max_length=255, blank=True,
         help_text='Получите бесплатный ключ на https://ocr.space/ocrapi. При ошибке будет использован локальный Tesseract.',

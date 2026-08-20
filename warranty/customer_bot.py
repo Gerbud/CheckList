@@ -21,6 +21,10 @@ from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
+class OpenAIModelUnavailable(RuntimeError):
+    pass
+
+
 def _telegram(config, method, payload):
     url = f'https://api.telegram.org/bot{config.bot_token}/{method}'
     body = json.dumps(payload, ensure_ascii=False).encode()
@@ -91,12 +95,10 @@ def _ocr_space(config, content, content_type):
     return '\n'.join(str(item.get('ParsedText') or '') for item in data.get('ParsedResults', []))
 
 
-def _openai_ocr(config, content, content_type, kind):
-    if not config.ocr_api_key:
-        return {}
+def _openai_ocr_with_model(config, content, content_type, kind, model):
     wanted = 'article и serial_number' if kind == 'label' else 'purchase_date'
     payload = {
-        'model': config.ocr_model,
+        'model': model,
         'messages': [{'role': 'user', 'content': [
             {'type': 'text', 'text': f'Распознай {wanted}. Верни только JSON с ключами article, serial_number, purchase_date (YYYY-MM-DD). Не угадывай: неизвестное значение — пустая строка.'},
             {'type': 'image_url', 'image_url': {'url': f'data:{content_type};base64,{base64.b64encode(content).decode()}'}},
@@ -108,10 +110,45 @@ def _openai_ocr(config, content, content_type, kind):
         'https://api.openai.com/v1/chat/completions', data=json.dumps(payload).encode(),
         headers={'Authorization': f'Bearer {config.ocr_api_key}', 'Content-Type': 'application/json'},
     )
-    with request.urlopen(api_request, timeout=45) as response:
-        data = json.loads(response.read())
+    try:
+        with request.urlopen(api_request, timeout=45) as response:
+            data = json.loads(response.read())
+    except error.HTTPError as exc:
+        try:
+            details = json.loads(exc.read())
+        except (ValueError, json.JSONDecodeError):
+            details = {}
+        api_error = details.get('error') if isinstance(details, dict) else {}
+        code = str((api_error or {}).get('code') or '').lower()
+        message = str((api_error or {}).get('message') or '').lower()
+        if exc.code in (400, 403, 404, 410) and (
+            code in ('model_not_found', 'model_not_supported', 'unsupported_model')
+            or any(word in message for word in ('model', 'deprecated', 'decommissioned'))
+        ):
+            raise OpenAIModelUnavailable('Выбранная модель OpenAI недоступна.') from exc
+        raise
     result = json.loads(data['choices'][0]['message']['content'])
-    return result if isinstance(result, dict) else {}
+    if isinstance(result, dict):
+        result['model'] = model
+        return result
+    return {}
+
+
+def _openai_ocr(config, content, content_type, kind):
+    if not config.ocr_api_key:
+        return {}
+    selected = config.ocr_model
+    try:
+        return _openai_ocr_with_model(config, content, content_type, kind, selected)
+    except OpenAIModelUnavailable:
+        fallback = config.OPENAI_CHEAPEST_MODEL
+        if selected == fallback:
+            raise
+        result = _openai_ocr_with_model(config, content, content_type, kind, fallback)
+        type(config).objects.filter(pk=config.pk).update(ocr_model=fallback)
+        config.ocr_model = fallback
+        result['fallback_from'] = selected
+        return result
 
 
 def _tesseract(config, content):

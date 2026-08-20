@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import _accept_consent, _activate_registration, _create_claim, _extract_ocr_fields, _handle_support_reply, _next_missing, _phone, _recognize, _route_to_support
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _create_claim, _extract_ocr_fields, _handle_support_reply, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -46,6 +46,27 @@ def test_openai_has_priority_over_free_ocr(monkeypatch):
     assert result['provider'] == 'openai'
 
 
+def test_unavailable_openai_model_switches_to_cheapest(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    config.ocr_model = 'gpt-4o'
+    config.save()
+    calls = []
+
+    def recognize(config, content, content_type, kind, model):
+        calls.append(model)
+        if model == 'gpt-4o':
+            raise OpenAIModelUnavailable('disabled')
+        return {'article': 'A-1', 'serial_number': 'SN-1', 'model': model}
+
+    monkeypatch.setattr('warranty.customer_bot._openai_ocr_with_model', recognize)
+    result = _openai_ocr(config, b'image', 'image/jpeg', 'label')
+    config.refresh_from_db()
+    assert calls == ['gpt-4o', 'gpt-4.1-nano']
+    assert result['fallback_from'] == 'gpt-4o'
+    assert config.ocr_model == 'gpt-4.1-nano'
+
+
 def test_customer_bot_admin_has_webhook_buttons(client):
     admin = get_user_model().objects.create_superuser('customer-bot-admin', 'admin@example.com', 'secret')
     config = WarrantyCustomerBotSettings.get_solo()
@@ -54,6 +75,7 @@ def test_customer_bot_admin_has_webhook_buttons(client):
     assert response.status_code == 200
     assert 'Создать webhook' in response.content.decode()
     assert 'Проверить webhook' in response.content.decode()
+    assert '<select name="ocr_model"' in response.content.decode()
 
 
 def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
