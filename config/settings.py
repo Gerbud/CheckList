@@ -46,6 +46,9 @@ SITE_URL = os.getenv('SITE_URL', 'https://checklist.es-helper.ru').rstrip('/')
 BITRIX_WARRANTY_SYNC_URL = os.getenv('BITRIX_WARRANTY_SYNC_URL', '').strip()
 BITRIX_WARRANTY_SYNC_SECRET = os.getenv('BITRIX_WARRANTY_SYNC_SECRET', '').strip()
 BITRIX_WARRANTY_SYNC_TIMEOUT = float(os.getenv('BITRIX_WARRANTY_SYNC_TIMEOUT', '20'))
+WARRANTY_TELEGRAM_FILE_MAX_BYTES = int(
+    os.getenv('WARRANTY_TELEGRAM_FILE_MAX_BYTES', str(20 * 1024 * 1024))
+)
 WARRANTY_PRODUCT_URL_TEMPLATE = os.getenv(
     'WARRANTY_PRODUCT_URL_TEMPLATE',
     'https://pinel.ru/catalog/sku/{product_id}/',

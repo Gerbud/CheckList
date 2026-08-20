@@ -183,6 +183,7 @@ def send_telegram_request(
     system_settings=None,
     incoming=False,
     quick=False,
+    retry_on_failure=True,
     sleeper=time.sleep,
 ):
     if method not in SUPPORTED_METHODS:
@@ -214,6 +215,9 @@ def send_telegram_request(
                 'official',
             )
         )
+
+    if not retry_on_failure and routes:
+        routes = [(routes[0][0], 1, routes[0][2])]
 
     alternative_attempts = 0
     official_attempts = 0

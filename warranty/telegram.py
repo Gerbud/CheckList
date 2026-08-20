@@ -100,6 +100,7 @@ def create_claim_topic(thread):
         {'chat_id': warranty.chat_id, 'name': thread.title[:128]},
         system_settings=bot,
         quick=True,
+        retry_on_failure=False,
     )
     result = response.data.get('result') or {}
     topic_id = result.get('message_thread_id')
@@ -127,6 +128,7 @@ def create_claim_topic(thread):
         payload,
         system_settings=bot,
         quick=True,
+        retry_on_failure=False,
     )
     message_result = message_response.data.get('result') or {}
     message_id = message_result.get('message_id')
@@ -333,6 +335,7 @@ def _handle_status_callback(callback, callback_data):
             },
             system_settings=bot,
             quick=True,
+            retry_on_failure=False,
         )
         result = response.data.get('result') or {}
         WarrantyTelegramMessage.objects.create(

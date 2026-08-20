@@ -402,6 +402,29 @@ def test_quick_request_falls_back_to_official_api_once(monkeypatch):
     assert delays == []
 
 
+def test_non_idempotent_request_does_not_retry_after_ambiguous_failure(monkeypatch):
+    config = configure_bot()
+    calls = []
+
+    def attempt(base_url, token, method, payload, timeout):
+        calls.append(base_url)
+        return None, 'description=request timeout'
+
+    monkeypatch.setattr('checklists.telegram_client._safe_attempt', attempt)
+    with pytest.raises(TelegramAPIError) as caught:
+        send_telegram_request(
+            'sendMessage',
+            {'chat_id': '1', 'text': 'не дублировать'},
+            system_settings=config,
+            quick=True,
+            retry_on_failure=False,
+        )
+
+    assert caught.value.alternative_attempts == 1
+    assert caught.value.official_attempts == 0
+    assert calls == ['https://tauto.gerbud.ru']
+
+
 def test_failed_after_ten_attempts_never_exposes_token(monkeypatch):
     config = configure_bot()
     monkeypatch.setattr(
