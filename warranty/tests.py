@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import timedelta
 from io import StringIO
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.urls import reverse
+from django.utils import timezone
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
@@ -17,7 +19,7 @@ from warranty.admin import WarrantyTelegramSettingsAdmin, WarrantyTelegramStatus
 from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
-from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
+from warranty.telegram import _claim_message, _status_keyboard, delete_expired_claim_topics, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
 from warranty.greenworks import base_article, drawing_links_for_claim, parse_catalog_page
 import warranty.telegram as warranty_telegram
 
@@ -962,6 +964,95 @@ def test_bitrix_status_change_notifies_topic_with_actor(monkeypatch):
         'message_thread_id': 4590,
         'text': message.text,
     })
+
+
+@pytest.mark.django_db
+def test_closed_topic_older_than_ten_days_is_deleted_but_history_is_kept(monkeypatch):
+    now = timezone.now()
+    claim = WarrantyClaim.objects.create(
+        external_id=861, status=WarrantyClaim.Status.CLOSED,
+    )
+    WarrantyClaim.objects.filter(pk=claim.pk).update(
+        closed_at=now - timedelta(days=10, seconds=1),
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4591',
+        state=WarrantyTelegramThread.State.ARCHIVED,
+        archived_at=now - timedelta(days=10, seconds=1),
+    )
+    message = WarrantyTelegramMessage.objects.create(
+        thread=thread, telegram_message_id='777', direction='inbound',
+        sender_name='Иван', text='История обращения',
+    )
+    calls = []
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda method, payload, **kwargs: calls.append((method, payload)),
+    )
+
+    result = delete_expired_claim_topics(now=now)
+
+    thread.refresh_from_db()
+    assert result == {'deleted': 1, 'failed': 0, 'rate_limited': 0}
+    assert calls == [('deleteForumTopic', {
+        'chat_id': '-100123', 'message_thread_id': 4591,
+    })]
+    assert thread.state == WarrantyTelegramThread.State.DELETED
+    assert thread.topic_id == ''
+    assert thread.deleted_topic_ids == ['4591']
+    assert thread.deleted_at == now
+    assert WarrantyClaim.objects.filter(pk=claim.pk).exists()
+    assert WarrantyTelegramMessage.objects.filter(pk=message.pk, text='История обращения').exists()
+
+
+@pytest.mark.django_db
+def test_topic_closed_exactly_ten_days_ago_is_not_deleted(monkeypatch):
+    now = timezone.now()
+    claim = WarrantyClaim.objects.create(
+        external_id=862, status=WarrantyClaim.Status.CLOSED,
+    )
+    WarrantyClaim.objects.filter(pk=claim.pk).update(closed_at=now - timedelta(days=10))
+    WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4592',
+        state=WarrantyTelegramThread.State.ARCHIVED,
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda *args, **kwargs: pytest.fail('topic must not be deleted'),
+    )
+
+    assert delete_expired_claim_topics(now=now)['deleted'] == 0
+
+
+@pytest.mark.django_db
+def test_reopened_deleted_claim_is_queued_for_new_topic():
+    claim = WarrantyClaim.objects.create(
+        external_id=863, status=WarrantyClaim.Status.CLOSED,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='',
+        deleted_topic_ids=['4593'], state=WarrantyTelegramThread.State.DELETED,
+        deleted_at=timezone.now(),
+    )
+    form = WarrantyClaimUpdateForm({
+        'status': WarrantyClaim.Status.IN_PROGRESS,
+        'priority': claim.priority,
+        'assigned_to': '',
+        'due_at': '',
+        'comment': '',
+    }, instance=claim)
+    assert form.is_valid(), form.errors
+
+    update_claim(claim=claim, form=form, actor=User(username='manager'))
+
+    thread.refresh_from_db()
+    assert thread.state == WarrantyTelegramThread.State.PLANNED
+    assert thread.deleted_at is None
+    assert thread.deleted_topic_ids == ['4593']
 
 
 @pytest.mark.django_db

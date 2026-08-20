@@ -1,6 +1,7 @@
 import html
 import hashlib
 import re
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from urllib import error, request
@@ -13,7 +14,7 @@ from django.utils import timezone
 from checklists.models import TelegramSystemSettings
 from checklists.telegram_client import OFFICIAL_API_BASE_URL, TelegramAPIError, send_telegram_request
 from warranty.greenworks import drawing_links_for_claim, product_article
-from warranty.models import WarrantyAttachment, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
+from warranty.models import WarrantyAttachment, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
 
 
 DEFAULT_TOPIC_STATUS_EMOJI = {
@@ -586,6 +587,59 @@ def reopen_claim_topic(thread):
     return thread
 
 
+def delete_expired_claim_topics(limit=50, *, now=None):
+    """Delete old closed topics from Telegram, retaining all local history."""
+    now = now or timezone.now()
+    cutoff = now - timedelta(days=10)
+    results = {'deleted': 0, 'failed': 0, 'rate_limited': 0}
+    threads = WarrantyTelegramThread.objects.select_related('claim').filter(
+        state=WarrantyTelegramThread.State.ARCHIVED,
+        claim__status=WarrantyClaim.Status.CLOSED,
+        claim__closed_at__lt=cutoff,
+        topic_id__gt='',
+    ).order_by('claim__closed_at', 'id')[:limit]
+    for thread in threads:
+        try:
+            warranty, bot = _config()
+            send_telegram_request(
+                'deleteForumTopic',
+                {
+                    'chat_id': warranty.chat_id,
+                    'message_thread_id': int(thread.topic_id),
+                },
+                system_settings=bot,
+                quick=True,
+                retry_on_failure=False,
+            )
+            deleted_topic_ids = list(thread.deleted_topic_ids)
+            if thread.topic_id not in deleted_topic_ids:
+                deleted_topic_ids.append(thread.topic_id)
+            thread.deleted_topic_ids = deleted_topic_ids
+            thread.topic_id = ''
+            thread.state = WarrantyTelegramThread.State.DELETED
+            thread.deleted_at = now
+            thread.last_error = ''
+            thread.save(update_fields=(
+                'deleted_topic_ids', 'topic_id', 'state', 'deleted_at',
+                'last_error', 'updated_at',
+            ))
+            results['deleted'] += 1
+        except TelegramAPIError as exc:
+            thread.last_error = str(exc)
+            thread.save(update_fields=('last_error', 'updated_at'))
+            if exc.status_code == 429:
+                results['rate_limited'] += 1
+                break
+            results['failed'] += 1
+            if exc.retryable:
+                break
+        except (TypeError, ValueError) as exc:
+            thread.last_error = str(exc)
+            thread.save(update_fields=('last_error', 'updated_at'))
+            results['failed'] += 1
+    return results
+
+
 def send_pending_bitrix_status_notifications(thread, *, bot=None):
     events = thread.claim.history.filter(
         payload__source='bitrix_status_sync',
@@ -640,7 +694,7 @@ def send_pending_bitrix_status_notifications(thread, *, bot=None):
 
 
 def sync_warranty_topics(limit=50):
-    results = {'created': 0, 'closed': 0, 'reopened': 0, 'updated': 0, 'failed': 0, 'rate_limited': 0}
+    results = {'created': 0, 'closed': 0, 'reopened': 0, 'updated': 0, 'deleted': 0, 'failed': 0, 'rate_limited': 0}
     query = WarrantyTelegramThread.objects.select_related('claim').filter(
         state__in=(WarrantyTelegramThread.State.PLANNED, WarrantyTelegramThread.State.CLOSE_PENDING, WarrantyTelegramThread.State.RESTORE_PENDING, WarrantyTelegramThread.State.STATUS_UPDATE_PENDING)
     ).order_by('id')[:limit]
@@ -696,6 +750,12 @@ def sync_warranty_topics(limit=50):
             thread.last_error = str(exc)
             thread.save(update_fields=('state', 'last_error', 'updated_at'))
             results['failed'] += 1
+    remaining = max(limit - sum(results[key] for key in ('created', 'closed', 'reopened', 'updated')), 0)
+    if remaining and not results['rate_limited']:
+        deletion = delete_expired_claim_topics(remaining)
+        results['deleted'] = deletion['deleted']
+        results['failed'] += deletion['failed']
+        results['rate_limited'] += deletion['rate_limited']
     return results
 
 

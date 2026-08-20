@@ -21,4 +21,4 @@ class Command(BaseCommand):
             self.stdout.write('Сообщений обновлено: {updated}; пропущено: {skipped}; rate limit: {rate_limited}; ошибок: {failed}.'.format(**result))
         else:
             result = sync_warranty_topics(options['limit'])
-            self.stdout.write('Создано: {created}; закрыто: {closed}; восстановлено: {reopened}; иконок и сообщений обновлено: {updated}; rate limit: {rate_limited}; ошибок: {failed}.'.format(**result))
+            self.stdout.write('Создано: {created}; закрыто: {closed}; удалено старых: {deleted}; восстановлено: {reopened}; иконок и сообщений обновлено: {updated}; rate limit: {rate_limited}; ошибок: {failed}.'.format(**result))

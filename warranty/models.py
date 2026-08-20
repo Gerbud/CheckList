@@ -509,6 +509,7 @@ class WarrantyTelegramThread(models.Model):
         ACTIVE = 'active', 'Активна'
         CLOSE_PENDING = 'close_pending', 'Ожидает закрытия'
         ARCHIVED = 'archived', 'Архивирована'
+        DELETED = 'deleted', 'Удалена из Telegram'
         RESTORE_PENDING = 'restore_pending', 'Ожидает восстановления'
         STATUS_UPDATE_PENDING = 'status_update_pending', 'Ожидает обновления статуса'
         ERROR = 'error', 'Ошибка'
@@ -519,6 +520,8 @@ class WarrantyTelegramThread(models.Model):
     state = models.CharField(max_length=24, choices=State.choices, default=State.PLANNED)
     title = models.CharField(max_length=255, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_topic_ids = models.JSONField(default=list, blank=True)
     last_error = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -46,8 +46,13 @@ def _record_status_change(
         )
         thread.archived_at = timezone.now() if not thread.topic_id else None
     elif old_status == WarrantyClaim.Status.CLOSED:
-        thread.state = WarrantyTelegramThread.State.RESTORE_PENDING
+        thread.state = (
+            WarrantyTelegramThread.State.PLANNED
+            if thread.state == WarrantyTelegramThread.State.DELETED
+            else WarrantyTelegramThread.State.RESTORE_PENDING
+        )
         thread.archived_at = None
+        thread.deleted_at = None
     elif thread.topic_id:
         thread.state = WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
     thread.save()
