@@ -18,8 +18,8 @@ function rows(mysqli $db, string $query): array {
     return $result->fetch_all(MYSQLI_ASSOC);
 }
 
-$claims = rows($db, 'SELECT w.*, CONCAT_WS(" ", u.NAME, u.LAST_NAME) CREATED_BY_NAME FROM warranty w LEFT JOIN b_user u ON u.ID = w.UF_CREATE_BY ORDER BY w.ID');
-$history = rows($db, 'SELECT l.*, CONCAT_WS(" ", u.NAME, u.LAST_NAME) ACTOR_NAME FROM warranty_log l LEFT JOIN b_user u ON u.ID = l.UF_USER_ID ORDER BY l.ID');
+$claims = rows($db, 'SELECT w.*, COALESCE(NULLIF(TRIM(CONCAT_WS(" ", u.NAME, u.LAST_NAME)), ""), NULLIF(TRIM(u.PERSONAL_MOBILE), ""), NULLIF(TRIM(u.PERSONAL_PHONE), ""), NULLIF(TRIM(u.WORK_PHONE), ""), CASE WHEN u.LOGIN REGEXP "^[+0-9][0-9 ()-]{8,}$" THEN TRIM(u.LOGIN) ELSE NULL END, CONCAT("Пользователь Bitrix ID ", u.ID)) CREATED_BY_NAME FROM warranty w LEFT JOIN b_user u ON u.ID = w.UF_CREATE_BY ORDER BY w.ID');
+$history = rows($db, 'SELECT l.*, COALESCE(NULLIF(TRIM(CONCAT_WS(" ", u.NAME, u.LAST_NAME)), ""), NULLIF(TRIM(u.PERSONAL_MOBILE), ""), NULLIF(TRIM(u.PERSONAL_PHONE), ""), NULLIF(TRIM(u.WORK_PHONE), ""), CASE WHEN u.LOGIN REGEXP "^[+0-9][0-9 ()-]{8,}$" THEN TRIM(u.LOGIN) ELSE NULL END, CONCAT("Пользователь Bitrix ID ", u.ID)) ACTOR_NAME FROM warranty_log l LEFT JOIN b_user u ON u.ID = l.UF_USER_ID ORDER BY l.ID');
 $historyByClaim = [];
 foreach ($history as $event) {
     $historyByClaim[(string)$event['UF_WARRANTY_ID']][] = $event;

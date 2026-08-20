@@ -25,7 +25,7 @@ final class Api
         switch ($action) {
             case 'health':
                 self::assertSchema();
-                return array('module' => self::MODULE_ID, 'version' => '1.3.0');
+                return array('module' => self::MODULE_ID, 'version' => '1.3.2');
             case 'claims.list':
                 return self::listClaims($payload);
             case 'claims.update':
@@ -96,7 +96,13 @@ final class Api
         $sinceHistoryId = max(0, (int)(isset($payload['sinceHistoryId']) ? $payload['sinceHistoryId'] : 0));
         $limit = max(1, min(500, (int)(isset($payload['limit']) ? $payload['limit'] : 100)));
         $connection = self::connection();
-        $sql = 'SELECT w.*, CONCAT_WS(" ", u.NAME, u.LAST_NAME) CREATED_BY_NAME '
+        $sql = 'SELECT w.*, COALESCE('
+            . 'NULLIF(TRIM(CONCAT_WS(" ", u.NAME, u.LAST_NAME)), ""), '
+            . 'NULLIF(TRIM(u.PERSONAL_MOBILE), ""), NULLIF(TRIM(u.PERSONAL_PHONE), ""), '
+            . 'NULLIF(TRIM(u.WORK_PHONE), ""), '
+            . 'CASE WHEN u.LOGIN REGEXP "^[+0-9][0-9 ()-]{8,}$" THEN TRIM(u.LOGIN) ELSE NULL END, '
+            . 'CONCAT("Пользователь Bitrix ID ", u.ID)'
+            . ') CREATED_BY_NAME '
             . 'FROM warranty w LEFT JOIN b_user u ON u.ID = w.UF_CREATE_BY '
             . 'WHERE w.ID > ' . $sinceClaimId
             . ' OR w.ID IN (SELECT DISTINCT UF_WARRANTY_ID FROM warranty_log WHERE ID > ' . $sinceHistoryId . ') '
@@ -112,7 +118,13 @@ final class Api
         }
         if ($ids) {
             $history = $connection->query(
-                'SELECT l.*, CONCAT_WS(" ", u.NAME, u.LAST_NAME) ACTOR_NAME FROM warranty_log l '
+                'SELECT l.*, COALESCE('
+                . 'NULLIF(TRIM(CONCAT_WS(" ", u.NAME, u.LAST_NAME)), ""), '
+                . 'NULLIF(TRIM(u.PERSONAL_MOBILE), ""), NULLIF(TRIM(u.PERSONAL_PHONE), ""), '
+                . 'NULLIF(TRIM(u.WORK_PHONE), ""), '
+                . 'CASE WHEN u.LOGIN REGEXP "^[+0-9][0-9 ()-]{8,}$" THEN TRIM(u.LOGIN) ELSE NULL END, '
+                . 'CONCAT("Пользователь Bitrix ID ", u.ID)'
+                . ') ACTOR_NAME FROM warranty_log l '
                 . 'LEFT JOIN b_user u ON u.ID = l.UF_USER_ID WHERE l.UF_WARRANTY_ID IN (' . implode(',', $ids) . ') ORDER BY l.ID'
             );
             while ($event = $history->fetch()) {
