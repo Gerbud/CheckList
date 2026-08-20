@@ -15,6 +15,7 @@ from checklists.price_tags import (
     build_qr_url,
     clean_product_name,
     clean_pinel_display_name,
+    find_pinel_product,
     import_product,
     suggest_product_name,
 )
@@ -22,6 +23,25 @@ from checklists.test_portals import create_access_user
 
 
 pytestmark = pytest.mark.django_db
+
+
+def test_find_pinel_product_returns_exact_article(monkeypatch):
+    html = '''
+        <div class="product__item">
+          <a class="item__title" href="/catalog/sku/111/">Триммер Greenworks</a>
+          <p class="item__vendor_code">Артикул: G40LT30</p>
+        </div>
+        <div class="product__item">
+          <a class="item__title" href="/catalog/sku/222/">Триммер Greenworks с АКБ</a>
+          <p class="item__vendor_code">Артикул: G40LT30K2</p>
+        </div>
+    '''
+    monkeypatch.setattr('checklists.price_tags._fetch_html', lambda url: (html, url))
+    assert find_pinel_product('G40LT30') == {
+        'name': 'Триммер Greenworks',
+        'url': 'https://pinel.ru/catalog/sku/111/',
+        'sku': 'G40LT30',
+    }
 
 
 @pytest.fixture

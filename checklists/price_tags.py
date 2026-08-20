@@ -721,6 +721,38 @@ def _pinel_search_variants(
     return selected
 
 
+def find_pinel_product(sku):
+    """Return the exact PINEL catalog card for an article, if it exists."""
+    requested_sku = re.sub(r'\s+', '', str(sku or ''))
+    base_sku = _pinel_base_sku(requested_sku)
+    if not base_sku:
+        return None
+    search_url = 'https://pinel.ru/search/?' + parse.urlencode({'q': base_sku})
+    html, final_url = _fetch_html(search_url)
+    parser = _PinelSearchHTMLParser()
+    parser.feed(html)
+    parser.close()
+    matches = []
+    for card in parser.cards:
+        name = re.sub(r'\s+', ' ', ''.join(card['name_parts'])).strip()
+        sku_text = re.sub(r'\s+', ' ', ''.join(card['sku_parts'])).strip()
+        sku_match = re.search(r'Артикул\s*:\s*(\S+)', sku_text, re.IGNORECASE)
+        if not card['href'] or not name or not sku_match:
+            continue
+        candidate_sku = re.sub(r'\s+', '', sku_match.group(1))
+        if _pinel_base_sku(candidate_sku) != base_sku:
+            continue
+        matches.append({
+            'name': name,
+            'url': parse.urljoin(final_url, card['href']),
+            'sku': candidate_sku,
+        })
+    return next(
+        (item for item in matches if item['sku'].casefold() == requested_sku.casefold()),
+        matches[0] if matches else None,
+    )
+
+
 def _pinel_price_variants(
     html, final_url, current_price, current_currency, sku='',
     force_refresh=False,

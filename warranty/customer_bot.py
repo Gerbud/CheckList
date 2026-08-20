@@ -17,6 +17,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from PIL import Image, ImageOps
 
+from checklists.price_tags import ProductImportError, find_pinel_product
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
@@ -527,9 +528,31 @@ def _save_photo(config, session, message, kind):
     if kind == 'label':
         session.article = str(recognized.get('article') or '').strip()[:255]
         session.serial_number = str(recognized.get('serial_number') or '').strip()[:255]
+        if session.article:
+            try:
+                recognized['product'] = find_pinel_product(session.article) or {}
+            except ProductImportError:
+                recognized['product'] = {}
     elif kind == 'receipt':
         session.purchase_date = parse_date(str(recognized.get('purchase_date') or ''))
     return True
+
+
+def _label_confirmation(session):
+    label_data = session.raw_ocr_data.get('label') or {}
+    product = label_data.get('product') or {}
+    name = str(product.get('name') or session.article or 'Товар').strip()
+    url = str(product.get('url') or '').strip()
+    product_line = f'Товар: {name}'
+    if url:
+        product_line += f'\nСсылка: {url}'
+    article = session.article or 'не удалось распознать'
+    serial = session.serial_number or 'не удалось распознать'
+    return (
+        f'Отлично, товар найден 👍\n{product_line}\n'
+        f'Артикул: {article}\nСерийный номер: {serial}\n\n'
+        'Теперь пришлите фото чека 🧾'
+    )
 
 
 def _handle_message(config, message):
@@ -553,14 +576,18 @@ def _handle_message(config, message):
         _send(config, session, f'{config.welcome_text}\n\nЧто хотите сделать?', reply_markup=_menu_keyboard())
         return
     if session.step == session.Step.LABEL and _save_photo(config, session, message, 'label'):
-        if session.mode == session.Mode.REGISTRATION:
-            session.step = session.Step.RECEIPT; session.save(); _send(config, session, 'Отлично. Теперь пришлите фото чека 🧾')
-        else:
-            session.step = session.Step.WARRANTY_CARD; session.save(); _send(config, session, 'Теперь пришлите фото гарантийного талона.')
+        session.step = session.Step.RECEIPT
+        session.save()
+        _send(config, session, _label_confirmation(session))
     elif session.step == session.Step.WARRANTY_CARD and _save_photo(config, session, message, 'warranty_card'):
-        session.step = session.Step.RECEIPT; session.save(); _send(config, session, 'Пришлите фото чека.')
-    elif session.step == session.Step.RECEIPT and _save_photo(config, session, message, 'receipt'):
         if session.phone and session.full_name:
+            _show_next(config, session)
+        else:
+            session.step = session.Step.PHONE; session.save(); _send(config, session, 'Осталось совсем немного. Поделитесь номером кнопкой ниже или напишите его сообщением.', reply_markup={'keyboard': [[{'text': 'Поделиться номером', 'request_contact': True}]], 'resize_keyboard': True, 'one_time_keyboard': True})
+    elif session.step == session.Step.RECEIPT and _save_photo(config, session, message, 'receipt'):
+        if session.mode == session.Mode.CLAIM:
+            session.step = session.Step.WARRANTY_CARD; session.save(); _send(config, session, 'Чек получил. Теперь пришлите фото гарантийного талона.')
+        elif session.phone and session.full_name:
             _show_next(config, session)
         else:
             session.step = session.Step.PHONE; session.save(); _send(config, session, 'Осталось совсем немного. Поделитесь номером кнопкой ниже или напишите его сообщением.', reply_markup={'keyboard': [[{'text': 'Поделиться номером', 'request_contact': True}]], 'resize_keyboard': True, 'one_time_keyboard': True})

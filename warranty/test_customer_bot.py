@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _handle_support_reply, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _handle_support_reply, _label_confirmation, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -32,6 +32,21 @@ def test_expired_callback_answer_does_not_break_customer_flow(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('query is too old')),
     )
     assert _answer_callback(config, {'id': 'expired-callback'}, 'Спасибо!') is None
+
+
+def test_label_confirmation_contains_product_link_serial_and_receipt_request():
+    session = WarrantyCustomerSession(
+        article='G40LT30', serial_number='SN-123',
+        raw_ocr_data={'label': {'product': {
+            'name': 'Триммер Greenworks',
+            'url': 'https://pinel.ru/catalog/sku/111/',
+        }}},
+    )
+    text = _label_confirmation(session)
+    assert 'Триммер Greenworks' in text
+    assert 'https://pinel.ru/catalog/sku/111/' in text
+    assert 'SN-123' in text
+    assert 'фото чека' in text
 
 
 def test_ocr_text_fields_are_extracted():
