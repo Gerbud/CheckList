@@ -2,6 +2,7 @@ import unicodedata
 
 from django import forms
 from django.contrib import admin, messages
+from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
@@ -14,6 +15,20 @@ class HiddenTechnicalAdmin(admin.ModelAdmin):
 
     def get_model_perms(self, request):
         return {}
+
+
+class SingletonSettingsAdmin(admin.ModelAdmin):
+    """Open the only settings object instead of showing a one-row list."""
+
+    def changelist_view(self, request, extra_context=None):
+        obj = self.model._default_manager.order_by('pk').first()
+        route = 'change' if obj else 'add'
+        args = (obj.pk,) if obj else ()
+        url = reverse(
+            f'admin:{self.model._meta.app_label}_{self.model._meta.model_name}_{route}',
+            args=args,
+        )
+        return HttpResponseRedirect(url)
 
 
 for model in (
@@ -92,7 +107,7 @@ class WarrantyProductRegistrationAdmin(admin.ModelAdmin):
 
 
 @admin.register(WarrantyCustomerBotSettings)
-class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
+class WarrantyCustomerBotSettingsAdmin(SingletonSettingsAdmin):
     change_form_template = 'admin/warranty/warrantycustomerbotsettings/change_form.html'
     fields = (
         'bot_token', 'is_enabled', 'support_group_id',
@@ -255,7 +270,7 @@ class WarrantyTelegramMessageAdmin(admin.ModelAdmin):
 
 
 @admin.register(WarrantyTelegramSettings)
-class WarrantyTelegramSettingsAdmin(admin.ModelAdmin):
+class WarrantyTelegramSettingsAdmin(SingletonSettingsAdmin):
     fields = (
         'peer_id', 'use_forum_topics', 'closed_topic_retention_days',
         'is_enabled',

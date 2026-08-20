@@ -15,8 +15,8 @@ from django.utils import timezone
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.admin import HiddenTechnicalAdmin, WarrantyActivityAdmin, WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin, WarrantyTelegramStatusIconAdmin, activity_rows
-from warranty.models import GreenworksDrawing, WarrantyActivity, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
+from warranty.admin import HiddenTechnicalAdmin, WarrantyActivityAdmin, WarrantyCustomerBotSettingsAdmin, WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin, WarrantyTelegramStatusIconAdmin, activity_rows
+from warranty.models import GreenworksDrawing, WarrantyActivity, WarrantyBitrixOutbox, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, delete_expired_claim_topics, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
@@ -186,6 +186,27 @@ def test_warranty_telegram_settings_admin_shows_topic_retention_days():
     assert model_admin.get_fields(None) == (
         'peer_id', 'use_forum_topics', 'closed_topic_retention_days',
         'is_enabled',
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ('model', 'admin_class'),
+    (
+        (WarrantyTelegramSettings, WarrantyTelegramSettingsAdmin),
+        (WarrantyCustomerBotSettings, WarrantyCustomerBotSettingsAdmin),
+    ),
+)
+def test_singleton_settings_admin_opens_settings_form_directly(rf, admin_user, model, admin_class):
+    obj = model.get_solo()
+    request = rf.get('/admin/settings/')
+    request.user = admin_user
+
+    response = admin_class(model, AdminSite()).changelist_view(request)
+
+    assert response.status_code == 302
+    assert response.url == reverse(
+        f'admin:warranty_{model._meta.model_name}_change', args=(obj.pk,),
     )
 
 
