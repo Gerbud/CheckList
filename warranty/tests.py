@@ -206,7 +206,7 @@ def test_telegram_claim_message_has_greenworks_drawing():
 
     message = _claim_message(claim)
 
-    assert '📐 <a href="https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/131524/">2516107 Exploded view</a>' in message
+    assert '📐 <a href="https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/131524/">Чертёж изделия</a>' in message
 
 
 @pytest.mark.django_db

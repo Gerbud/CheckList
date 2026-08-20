@@ -161,7 +161,7 @@ def _claim_message(claim):
     drawing_links = drawing_links_for_claim(claim)
     drawings = '\n'.join(
         f'📐 <a href="{html.escape(item["url"], quote=True)}">'
-        f'{html.escape(item.get("title") or "Чертёж Greenworks")}</a>'
+        f'Чертёж изделия</a>'
         for item in drawing_links
         if item.get('url')
     )
