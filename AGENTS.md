@@ -4,7 +4,17 @@
 
 - This repository and its warranty integration belong to **Pinel** (`pinel.ru`).
 - Do not mix in naming, hosts, SSH aliases, paths, branding, module IDs, or deployment instructions from any other project.
+- **Enroad is a different project. Never use any Enroad host, SSH alias, user, path, URL, credential, deployment command, or project convention while working in this repository.**
+- If a command, saved shell snippet, tool suggestion, or prior conversation context mentions `enroad`, stop and replace it with the verified Pinel value from this file before executing anything.
 - The Bitrix module ID is `pinel.warrantysync` and its PHP namespace is `Pinel\WarrantySync`.
+
+## Connection rules
+
+- Before any remote connection or deployment, confirm that the working repository is `/Users/bud/Projects/store-checklist` and that the target belongs to Pinel.
+- For Pinel Bitrix access, connect only to `pinel_ru_usr@hosting.autobud.ru` with the key and SSH options shown below. Do not substitute a remembered alias or a host from another project.
+- After connecting, verify the remote target before making changes (for example, check the hostname, user, and `/var/www/pinel_ru_usr/data/www/pinel.ru` document root).
+- Use `https://pinel.ru` for production HTTP checks. Do not test or deploy this repository against an Enroad domain.
+- Treat a mismatch in repository, hostname, SSH user, document root, or public domain as a hard stop: do not continue until the target is corrected.
 
 ## Pinel Bitrix server
 
