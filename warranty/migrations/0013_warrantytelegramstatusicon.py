@@ -32,6 +32,7 @@ def use_utf8mb4_for_emoji(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
     dependencies = [('warranty', '0012_greenworksdrawing')]
 
     operations = [
