@@ -8,7 +8,7 @@ from django.urls import reverse
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.models import WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramSettings, WarrantyTelegramThread
+from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramSettings, WarrantyTelegramThread
 from warranty.services import update_claim
 
 
@@ -22,6 +22,11 @@ def test_warranty_list_is_system_admin_only(client):
     EmployeeProfile.objects.create(user=admin, role=EmployeeProfile.Role.SYSTEM_ADMIN, is_active=True)
     client.force_login(admin)
     assert client.get(reverse('warranty:claim_list')).status_code == 200
+
+    WarrantyClaim.objects.create(external_id=999, assigned_to=None)
+    response = client.get(reverse('warranty:claim_list'))
+    assert response.status_code == 200
+    assert '—' in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -68,3 +73,23 @@ def test_warranty_peer_id_is_normalized_for_bot_api():
     settings.peer_id = '3894555747'
     settings.save()
     assert settings.chat_id == '-1003894555747'
+
+
+@pytest.mark.django_db
+def test_site_claim_update_is_queued_for_bitrix():
+    actor = User.objects.create_user('admin-sync')
+    claim = WarrantyClaim.objects.create(
+        source='bitrix', external_id=77, source_status='1', status=WarrantyClaim.Status.NEW,
+    )
+    form = WarrantyClaimUpdateForm({
+        'status': WarrantyClaim.Status.IN_PROGRESS,
+        'priority': WarrantyClaim.Priority.NORMAL,
+        'comment': 'Принято сервисным центром',
+    }, instance=claim)
+    assert form.is_valid(), form.errors
+
+    update_claim(claim=claim, form=form, actor=actor)
+
+    queued = WarrantyBitrixOutbox.objects.get(claim=claim)
+    assert queued.payload == {'UF_STATUS': '4', 'UF_COMMENT': 'Принято сервисным центром'}
+    assert queued.status == WarrantyBitrixOutbox.Status.PENDING
