@@ -1,6 +1,13 @@
 from django.db import migrations, models
 
 
+def queue_existing_active_topics(apps, schema_editor):
+    Thread = apps.get_model('warranty', 'WarrantyTelegramThread')
+    Thread.objects.filter(state='active').exclude(topic_id='').update(
+        state='status_update_pending',
+    )
+
+
 class Migration(migrations.Migration):
     dependencies = [('warranty', '0007_warrantytelegramstatusbutton')]
 
@@ -23,4 +30,5 @@ class Migration(migrations.Migration):
                 max_length=24,
             ),
         ),
+        migrations.RunPython(queue_existing_active_topics, migrations.RunPython.noop),
     ]
