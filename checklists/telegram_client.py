@@ -35,6 +35,10 @@ SUPPORTED_METHODS = {
     'deleteMessage',
     'setMyCommands',
     'getMyCommands',
+    'createForumTopic',
+    'closeForumTopic',
+    'reopenForumTopic',
+    'editForumTopic',
 }
 
 

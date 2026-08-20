@@ -8,6 +8,7 @@ from checklists.portal_views import RoleLoginView
 
 
 urlpatterns = [
+    path('warranty/', include('warranty.urls')),
     path('admin/', admin.site.urls),
     path(
         'login/',
