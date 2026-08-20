@@ -183,6 +183,20 @@ def message_update(update_id, user_id, chat_id, text):
     }
 
 
+def service_message_update(update_id, user_id, chat_id):
+    return {
+        'update_id': update_id,
+        'message': {
+            'message_id': update_id,
+            'from': {'id': user_id, 'first_name': 'Иван'},
+            'chat': {'id': chat_id, 'type': 'supergroup'},
+            'new_chat_photo': [
+                {'file_id': 'photo-id', 'file_unique_id': 'photo-unique-id'},
+            ],
+        },
+    }
+
+
 def callback_update(update_id, user_id, chat_id, data):
     return {
         'update_id': update_id,
@@ -555,6 +569,17 @@ def test_start_creates_pending_binding_and_update_is_once():
     assert pending.status == TelegramPendingBinding.Status.PENDING
     assert len(pending.one_time_code) == 6
     assert TelegramUpdateLog.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_service_message_is_ignored_without_bot_reply():
+    update = service_message_update(103, 703, -100123)
+
+    assert process_telegram_update(update) == 'processed'
+
+    log = TelegramUpdateLog.objects.get(update_id=103)
+    assert log.processed is True
+    assert TelegramOutboundMessage.objects.count() == 0
 
 
 def test_only_system_admin_can_approve_binding():

@@ -11,6 +11,31 @@ class UpdateMode:
 
 BACKGROUND_COMMANDS = {'/report', '/reports', '/analytics'}
 
+SERVICE_MESSAGE_FIELDS = {
+    'new_chat_members',
+    'left_chat_member',
+    'new_chat_title',
+    'new_chat_photo',
+    'delete_chat_photo',
+    'group_chat_created',
+    'supergroup_chat_created',
+    'channel_chat_created',
+    'message_auto_delete_timer_changed',
+    'migrate_to_chat_id',
+    'migrate_from_chat_id',
+    'pinned_message',
+    'forum_topic_created',
+    'forum_topic_closed',
+    'forum_topic_reopened',
+    'forum_topic_edited',
+    'general_forum_topic_hidden',
+    'general_forum_topic_unhidden',
+}
+
+
+def _is_service_message(message):
+    return any(field in message for field in SERVICE_MESSAGE_FIELDS)
+
 
 def classify_telegram_update(update):
     message = update.get('message') or {}
@@ -21,6 +46,8 @@ def classify_telegram_update(update):
     if callback:
         return UpdateMode.SYNCHRONOUS
     if message:
+        if _is_service_message(message):
+            return UpdateMode.IGNORED
         text = str(message.get('text', '')).strip()
         command = text.split()[0].split('@')[0].lower() if text.startswith('/') else ''
         return (
