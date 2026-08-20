@@ -18,7 +18,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from PIL import Image, ImageOps
 
-from checklists.price_tags import ProductImportError, find_pinel_product
+from checklists.price_tags import ProductImportError, find_pinel_product, format_product_price, import_product, search_pinel_products
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
@@ -166,6 +166,128 @@ def _openai_ocr(config, content, content_type, kind):
         return result
 
 
+def _product_search_query(question):
+    value = re.sub(r'[^0-9A-Za-zА-Яа-яЁё+./ -]+', ' ', str(question or ''))
+    value = re.sub(
+        r'\b(?:greenworks|гринворкс|посоветуй(?:те)?|подбери(?:те)?|какой|какая|какие|'
+        r'нужен|нужна|нужно|товар|модель|купить|для|мне)\b',
+        ' ', value, flags=re.IGNORECASE,
+    )
+    return re.sub(r'\s+', ' ', value).strip()[:120] or 'Greenworks'
+
+
+def _pinel_product_context(question):
+    query = _product_search_query(question)
+    search_url = 'https://pinel.ru/search/?' + parse.urlencode({'q': query})
+    products = [
+        item for item in search_pinel_products(query, limit=10)
+        if re.search(r'greenworks|гринворкс', item.get('name', ''), re.IGNORECASE)
+    ][:5]
+    detailed = []
+    for product in products[:2]:
+        try:
+            imported = import_product(product['url'], _resolve_pinel_base=False)
+        except ProductImportError:
+            continue
+        detailed.append({
+            **product,
+            'price': imported.price or product.get('price', ''),
+            'brand': imported.brand,
+            'type': imported.product_type,
+            'properties': imported.properties[:20],
+        })
+    details_by_url = {item['url']: item for item in detailed}
+    return [details_by_url.get(item['url'], item) for item in products], search_url
+
+
+def _openai_product_answer(config, question, products, search_url, history=()):
+    sources = []
+    for item in products:
+        source = {
+            'name': item.get('name', ''), 'article': item.get('sku', ''),
+            'price': format_product_price(item['price']) if item.get('price') else '',
+            'url': item.get('url', ''),
+        }
+        if item.get('properties'):
+            source['characteristics'] = dict(item['properties'])
+        sources.append(source)
+    system = (
+        'Ты консультант магазина Pinel по товарам Greenworks. Отвечай по-русски, кратко и полезно. '
+        'Используй только факты из переданного контекста pinel.ru; не придумывай характеристики, цену или наличие. '
+        'Никогда не упоминай, не сравнивай и не рекомендуй конкурирующие бренды, магазины и маркетплейсы. '
+        'Рекомендуй только Greenworks с pinel.ru. В каждом ответе дай хотя бы одну полную ссылку на pinel.ru. '
+        'Если данных недостаточно, прямо скажи об этом, задай уточняющий вопрос и дай ссылку поиска. '
+        'Ссылки бери дословно только из контекста. Не используй Markdown-таблицы.'
+    )
+    messages = [{'role': 'system', 'content': system}]
+    for item in list(history)[-4:]:
+        if item.get('role') in ('user', 'assistant') and item.get('content'):
+            messages.append({'role': item['role'], 'content': str(item['content'])[:2000]})
+    messages.append({'role': 'user', 'content': (
+        f'Вопрос клиента: {question}\n\nКонтекст pinel.ru: '
+        f'{json.dumps({"products": sources, "search_url": search_url}, ensure_ascii=False)}'
+    )})
+    payload = {'model': config.ocr_model, 'messages': messages, 'temperature': 0.2, 'max_tokens': 700}
+    api_request = request.Request(
+        'https://api.openai.com/v1/chat/completions', data=json.dumps(payload, ensure_ascii=False).encode(),
+        headers={'Authorization': f'Bearer {config.ocr_api_key}', 'Content-Type': 'application/json'},
+    )
+    with request.urlopen(api_request, timeout=45) as response:
+        data = json.loads(response.read())
+    answer = str(data['choices'][0]['message']['content']).strip()
+    allowed_urls = {search_url, *(item.get('url', '') for item in products)}
+    for url in re.findall(r'https?://[^\s)>\]]+', answer):
+        if url.rstrip('.,') not in allowed_urls:
+            answer = answer.replace(url, '')
+    if 'pinel.ru' not in answer:
+        answer = f'{answer}\n\nПосмотреть на pinel.ru: {search_url}'
+    return answer[:4000]
+
+
+def _start_product_consultation(config, callback):
+    sender = callback.get('from') or {}
+    message = callback.get('message') or {}
+    session, _ = WarrantyCustomerSession.objects.get_or_create(
+        telegram_user_id=str(sender.get('id')),
+        defaults={'chat_id': str((message.get('chat') or {}).get('id') or sender.get('id'))},
+    )
+    session.chat_id = str((message.get('chat') or {}).get('id') or session.chat_id)
+    session.username = str(sender.get('username') or '')[:255]
+    session.mode = session.Mode.CONSULTATION
+    session.step = session.Step.CONSULTATION
+    session.raw_ocr_data = {'consultation_history': []}
+    session.save()
+    _answer_callback(config, callback)
+    if not config.product_consultation_enabled or not config.ocr_api_key:
+        _send(config, session, 'Консультант пока недоступен. Напишите специалисту поддержки.', reply_markup=_menu_keyboard())
+        session.step = session.Step.MENU
+        session.save(update_fields=('step', 'updated_at'))
+        return
+    _send(
+        config, session,
+        'Помогу подобрать товар Greenworks по каталогу Pinel. Опишите задачу: что нужно сделать, площадь участка и какая аккумуляторная линейка уже есть.\n\nДля выхода отправьте /start.',
+    )
+
+
+def _consult_about_product(config, session, question):
+    if not config.product_consultation_enabled or not config.ocr_api_key:
+        _send(config, session, 'Консультант временно недоступен. Выберите поддержку в меню /start.')
+        return
+    try:
+        products, search_url = _pinel_product_context(question)
+        history = list(session.raw_ocr_data.get('consultation_history') or [])
+        answer = _openai_product_answer(config, question, products, search_url, history)
+    except (ProductImportError, error.URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError):
+        _send(config, session, 'Не удалось получить данные каталога. Попробуйте ещё раз или выберите поддержку в меню /start.')
+        return
+    history.extend(({'role': 'user', 'content': question[:2000]}, {'role': 'assistant', 'content': answer[:2000]}))
+    raw_data = dict(session.raw_ocr_data)
+    raw_data['consultation_history'] = history[-8:]
+    session.raw_ocr_data = raw_data
+    session.save(update_fields=('raw_ocr_data', 'updated_at'))
+    _send(config, session, answer, disable_web_page_preview=True)
+
+
 def _tesseract(config, content):
     command = (config.tesseract_command or 'tesseract').strip()
     if not command or Path(command).name != command and not Path(command).is_absolute():
@@ -262,6 +384,7 @@ def _show_next(config, session):
 
 def _menu_keyboard():
     return {'inline_keyboard': [
+        [{'text': '🌿 Подобрать товар Greenworks', 'callback_data': 'product:consultation'}],
         [{'text': '✅ Активировать электронную гарантию', 'callback_data': 'flow:registration'}],
         [{'text': '🛠 Оформить рекламацию', 'callback_data': 'flow:claim'}],
         [{'text': '💬 Написать в поддержку', 'callback_data': 'support:start'}],
@@ -756,6 +879,8 @@ def _handle_message(config, message):
         try: session.purchase_date = datetime.strptime(text, '%d.%m.%Y').date()
         except ValueError: _send(config, session, 'Введите дату в формате ДД.ММ.ГГГГ.'); return
         _show_next(config, session)
+    elif session.step == session.Step.CONSULTATION and text:
+        _consult_about_product(config, session, text)
     else:
         _route_to_support(config, session, message)
 
@@ -825,6 +950,7 @@ def customer_bot_webhook(request):
             data = callback.get('data') or ''
             if data == 'flow:registration': _start_flow(config, callback, WarrantyCustomerSession.Mode.REGISTRATION)
             elif data == 'flow:claim': _start_flow(config, callback, WarrantyCustomerSession.Mode.CLAIM)
+            elif data == 'product:consultation': _start_product_consultation(config, callback)
             elif data == 'support:start': _start_support_chat(config, callback)
             elif data == 'consent:accept': _accept_consent(config, callback)
             elif data == 'consent:decline': _decline_consent(config, callback)

@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _phone, _recognize, _request_contacts, _route_to_support, _start_support_chat
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -21,6 +21,59 @@ def test_phone_normalization():
 def test_main_menu_has_support_button():
     buttons = [button for row in _menu_keyboard()['inline_keyboard'] for button in row]
     assert {'text': '💬 Написать в поддержку', 'callback_data': 'support:start'} in buttons
+
+
+def test_main_menu_has_greenworks_consultation_button():
+    buttons = [button for row in _menu_keyboard()['inline_keyboard'] for button in row]
+    assert {'text': '🌿 Подобрать товар Greenworks', 'callback_data': 'product:consultation'} in buttons
+
+
+def test_product_consultation_uses_its_own_session_mode(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._answer_callback', lambda *args: None)
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append(text))
+    _start_product_consultation(config, {
+        'id': 'consult-callback', 'from': {'id': 710, 'username': 'buyer'},
+        'message': {'chat': {'id': 711}},
+    })
+    session = WarrantyCustomerSession.objects.get(telegram_user_id='710')
+    assert session.mode == session.Mode.CONSULTATION
+    assert session.step == session.Step.CONSULTATION
+    assert 'Greenworks' in sent[-1]
+
+
+def test_consultation_message_is_answered_by_openai_not_support(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='720', chat_id='721', mode=WarrantyCustomerSession.Mode.CONSULTATION,
+        step=WarrantyCustomerSession.Step.CONSULTATION,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._consult_about_product', lambda config, session, text: sent.append(text))
+    monkeypatch.setattr('warranty.customer_bot._route_to_support', lambda *args: pytest.fail('must not route to support'))
+    _handle_message(config, {'message_id': 801, 'chat': {'id': 721}, 'from': {'id': 720}, 'text': 'Какой триммер выбрать?'})
+    assert sent == ['Какой триммер выбрать?']
+
+
+def test_product_answer_removes_external_links_and_adds_pinel_source(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    response = {'choices': [{'message': {'content': 'Подойдёт эта модель. https://competitor.example/item'}}]}
+
+    class FakeResponse:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return __import__('json').dumps(response).encode()
+
+    monkeypatch.setattr('warranty.customer_bot.request.urlopen', lambda *args, **kwargs: FakeResponse())
+    answer = _openai_product_answer(
+        config, 'Нужен триммер', [], 'https://pinel.ru/search/?q=trimmer',
+    )
+    assert 'competitor.example' not in answer
+    assert 'https://pinel.ru/search/?q=trimmer' in answer
 
 
 def test_support_button_invites_customer_to_write_here(monkeypatch):

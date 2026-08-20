@@ -54,7 +54,7 @@ class WarrantyCustomerBotSettings(models.Model):
     is_enabled = models.BooleanField('бот включён', default=False)
     ocr_api_key = models.CharField(
         'ключ OpenAI для распознавания', max_length=255, blank=True,
-        help_text='Основной способ распознавания. Если ключ пуст или сервис недоступен, используется OCR.space.',
+        help_text='Используется для распознавания и консультаций по товарам. Если ключ пуст, консультации недоступны.',
     )
     ocr_model = models.CharField(
         'модель OpenAI', max_length=64, choices=OPENAI_MODEL_CHOICES,
@@ -101,6 +101,7 @@ class WarrantyCustomerBotSettings(models.Model):
         ),
     )
     welcome_text = models.TextField('приветствие', default='Здравствуйте! Я помогу оформить гарантийное обращение. Пришлите фото этикетки изделия.')
+    product_consultation_enabled = models.BooleanField('консультации по товарам включены', default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -133,6 +134,7 @@ class WarrantyCustomerSession(models.Model):
     class Mode(models.TextChoices):
         CLAIM = 'claim', 'Рекламация'
         REGISTRATION = 'registration', 'Регистрация покупки'
+        CONSULTATION = 'consultation', 'Консультация по товару'
 
     class Step(models.TextChoices):
         MENU = 'menu', 'Главное меню'
@@ -148,6 +150,7 @@ class WarrantyCustomerSession(models.Model):
         PURCHASE_DATE = 'purchase_date', 'Дата покупки вручную'
         READY = 'ready', 'Подтверждение'
         SUBMITTED = 'submitted', 'Оформлено'
+        CONSULTATION = 'consultation', 'Консультация по товару'
 
     telegram_user_id = models.CharField(max_length=64, unique=True)
     chat_id = models.CharField(max_length=64)

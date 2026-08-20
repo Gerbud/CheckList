@@ -753,6 +753,41 @@ def find_pinel_product(sku):
     )
 
 
+def search_pinel_products(query, limit=5):
+    """Return PINEL catalog cards for a customer-facing product search."""
+    query = re.sub(r'\s+', ' ', str(query or '')).strip()[:200]
+    if not query:
+        return []
+    search_url = 'https://pinel.ru/search/?' + parse.urlencode({'q': query})
+    html, final_url = _fetch_html(search_url)
+    parser = _PinelSearchHTMLParser()
+    parser.feed(html)
+    parser.close()
+    products = []
+    seen_urls = set()
+    for card in parser.cards:
+        name = re.sub(r'\s+', ' ', ''.join(card['name_parts'])).strip()
+        sku_text = re.sub(r'\s+', ' ', ''.join(card['sku_parts'])).strip()
+        sku_match = re.search(r'Артикул\s*:\s*(\S+)', sku_text, re.IGNORECASE)
+        href = card.get('href') or ''
+        if not href or not name:
+            continue
+        url = parse.urljoin(final_url, href)
+        if not site_url_matches(url, 'pinel.ru') or url in seen_urls:
+            continue
+        price_match = re.search(r'([\d\s\u00a0]+)\s*₽', ''.join(card['price_parts']))
+        products.append({
+            'name': name,
+            'url': url,
+            'sku': sku_match.group(1) if sku_match else '',
+            'price': re.sub(r'[\s\u00a0]+', '', price_match.group(1)) if price_match else '',
+        })
+        seen_urls.add(url)
+        if len(products) >= max(1, min(int(limit), 10)):
+            break
+    return products
+
+
 def _pinel_price_variants(
     html, final_url, current_price, current_currency, sku='',
     force_refresh=False,
