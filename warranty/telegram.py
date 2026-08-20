@@ -22,6 +22,7 @@ def create_claim_topic(thread):
         'createForumTopic',
         {'chat_id': warranty.chat_id, 'name': thread.title[:128]},
         system_settings=bot,
+        quick=True,
     )
     result = response.data.get('result') or {}
     topic_id = result.get('message_thread_id')
@@ -47,13 +48,14 @@ def create_claim_topic(thread):
             ),
         },
         system_settings=bot,
+        quick=True,
     )
     return locked
 
 
 def close_claim_topic(thread):
     warranty, bot = _config()
-    send_telegram_request('closeForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot)
+    send_telegram_request('closeForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot, quick=True)
     thread.state = WarrantyTelegramThread.State.ARCHIVED
     thread.archived_at = timezone.now()
     thread.last_error = ''
@@ -63,7 +65,7 @@ def close_claim_topic(thread):
 
 def reopen_claim_topic(thread):
     warranty, bot = _config()
-    send_telegram_request('reopenForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot)
+    send_telegram_request('reopenForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot, quick=True)
     thread.state = WarrantyTelegramThread.State.ACTIVE
     thread.archived_at = None
     thread.last_error = ''
@@ -72,7 +74,7 @@ def reopen_claim_topic(thread):
 
 
 def sync_warranty_topics(limit=50):
-    results = {'created': 0, 'closed': 0, 'reopened': 0, 'failed': 0}
+    results = {'created': 0, 'closed': 0, 'reopened': 0, 'failed': 0, 'rate_limited': 0}
     query = WarrantyTelegramThread.objects.select_related('claim').filter(
         state__in=(WarrantyTelegramThread.State.PLANNED, WarrantyTelegramThread.State.CLOSE_PENDING, WarrantyTelegramThread.State.RESTORE_PENDING)
     ).order_by('id')[:limit]
@@ -87,7 +89,17 @@ def sync_warranty_topics(limit=50):
             else:
                 reopen_claim_topic(thread)
                 results['reopened'] += 1
-        except (TelegramAPIError, ValueError) as exc:
+        except TelegramAPIError as exc:
+            if exc.status_code == 429:
+                thread.last_error = str(exc)
+                thread.save(update_fields=('last_error', 'updated_at'))
+                results['rate_limited'] += 1
+                break
+            thread.state = WarrantyTelegramThread.State.ERROR
+            thread.last_error = str(exc)
+            thread.save(update_fields=('state', 'last_error', 'updated_at'))
+            results['failed'] += 1
+        except ValueError as exc:
             thread.state = WarrantyTelegramThread.State.ERROR
             thread.last_error = str(exc)
             thread.save(update_fields=('state', 'last_error', 'updated_at'))

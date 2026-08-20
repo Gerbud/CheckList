@@ -13,4 +13,4 @@ class Command(BaseCommand):
         if not 1 <= options['limit'] <= 200:
             raise CommandError('--limit должен быть от 1 до 200.')
         result = sync_warranty_topics(options['limit'])
-        self.stdout.write('Создано: {created}; закрыто: {closed}; восстановлено: {reopened}; ошибок: {failed}.'.format(**result))
+        self.stdout.write('Создано: {created}; закрыто: {closed}; восстановлено: {reopened}; rate limit: {rate_limited}; ошибок: {failed}.'.format(**result))
