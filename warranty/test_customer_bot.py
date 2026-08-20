@@ -28,6 +28,14 @@ def test_main_menu_has_greenworks_consultation_button():
     assert {'text': '🌿 Подобрать товар Greenworks', 'callback_data': 'product:consultation'} in buttons
 
 
+def test_default_welcome_mentions_product_questions_and_warranty():
+    config = WarrantyCustomerBotSettings()
+    assert 'вопросы' in config.welcome_text
+    assert 'Greenworks' in config.welcome_text
+    assert 'гарантию' in config.welcome_text
+    assert 'рекламацию' in config.welcome_text
+
+
 def test_customer_bot_menu_registers_privacy_command():
     assert {'command': 'privacy', 'description': 'Политика обработки данных'} in _customer_bot_commands()
 

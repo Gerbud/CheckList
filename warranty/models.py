@@ -100,7 +100,13 @@ class WarrantyCustomerBotSettings(models.Model):
             '{withdrawal_contact}, {privacy_policy_url}.'
         ),
     )
-    welcome_text = models.TextField('приветствие', default='Здравствуйте! Я помогу оформить гарантийное обращение. Пришлите фото этикетки изделия.')
+    welcome_text = models.TextField(
+        'приветствие',
+        default=(
+            'Здравствуйте! Я помогу подобрать товар Greenworks, отвечу на вопросы по его использованию, '
+            'активирую электронную гарантию или помогу оформить рекламацию.'
+        ),
+    )
     product_consultation_enabled = models.BooleanField('консультации по товарам включены', default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
