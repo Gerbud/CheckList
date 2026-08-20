@@ -90,6 +90,7 @@ def test_claim_status_question_reports_that_customer_has_no_claims(monkeypatch):
         step=WarrantyCustomerSession.Step.CONSULTATION,
     )
     sent = []
+    monkeypatch.setattr('warranty.customer_bot._refresh_claim_cache', lambda: None)
     monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)) or {'message_id': 905})
     monkeypatch.setattr('warranty.customer_bot._openai_product_answer', lambda *args: pytest.fail('claim status must not use OpenAI'))
     _consult_about_product(config, session, 'Что с моей рекламацией?', 904)
@@ -114,6 +115,7 @@ def test_claim_status_question_returns_real_status_and_support_option(monkeypatc
         article='2600007UG', status=WarrantyClaim.Status.IN_PROGRESS,
     )
     sent = []
+    monkeypatch.setattr('warranty.customer_bot._refresh_claim_cache', lambda: None)
     monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)) or {'message_id': 907})
     monkeypatch.setattr('warranty.customer_bot._openai_product_answer', lambda *args: pytest.fail('claim status must not use OpenAI'))
     _consult_about_product(config, session, 'Что с моей рекламацией по снегоуборщику?', 906)
@@ -347,6 +349,44 @@ def test_consent_is_requested_immediately_before_phone(monkeypatch):
     session.refresh_from_db()
     assert session.step == session.Step.CONSENT
     assert 'Согласен ✅' in str(sent[-1][1]['reply_markup'])
+    assert 'Не согласен' not in str(sent[-1][1]['reply_markup'])
+    assert 'не согласен' in sent[-1][0]
+
+
+def test_customer_can_decline_consent_with_text(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='506', chat_id='606', mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.CONSENT,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)))
+
+    _handle_message(config, {
+        'message_id': 706, 'from': {'id': 506}, 'chat': {'id': 606}, 'text': 'Не согласен',
+    })
+
+    session.refresh_from_db()
+    assert session.step == session.Step.MENU
+    assert 'данные не сохраняем' in sent[-1][0]
+
+
+def test_other_consent_text_does_not_count_as_decline(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='507', chat_id='607', mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.CONSENT,
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append((text, kwargs)))
+
+    _handle_message(config, {
+        'message_id': 707, 'from': {'id': 507}, 'chat': {'id': 607}, 'text': 'У меня вопрос',
+    })
+
+    session.refresh_from_db()
+    assert session.step == session.Step.CONSENT
+    assert 'нажмите «Согласен' in sent[-1][0]
 
 
 def test_purchase_registration_is_idempotent(monkeypatch):

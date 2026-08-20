@@ -5,7 +5,7 @@ import re
 import secrets
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from urllib import error, parse, request
@@ -19,8 +19,8 @@ from django.views.decorators.csrf import csrf_exempt
 from PIL import Image, ImageOps
 
 from checklists.price_tags import ProductImportError, find_pinel_product, format_product_price, import_product, search_pinel_products
-from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
-from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
+from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient, import_claim_rows
+from warranty.models import WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
 class OpenAIModelUnavailable(RuntimeError):
@@ -315,7 +315,26 @@ def _is_claim_status_question(question):
     )
 
 
+def _refresh_claim_cache():
+    state = WarrantyBitrixSyncState.get_solo()
+    if state.last_success_at and state.last_success_at >= timezone.now() - timedelta(minutes=2):
+        return
+    try:
+        result = BitrixWarrantyClient().call('claims.list', {
+            'sinceClaimId': 0, 'sinceHistoryId': state.history_cursor, 'limit': 500,
+        })
+        import_claim_rows(result.get('claims', []))
+    except BitrixSyncError:
+        return
+    state.claim_cursor = max(state.claim_cursor, int(result.get('claimCursor') or 0))
+    state.history_cursor = max(state.history_cursor, int(result.get('historyCursor') or 0))
+    state.last_success_at = timezone.now()
+    state.last_error = ''
+    state.save()
+
+
 def _customer_claims(session, question=''):
+    _refresh_claim_cache()
     claim_ids = {session.external_claim_id} if session.external_claim_id else set()
     profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id).first()
     customer_phone = _phone(session.phone or (profile.phone if profile else ''))
@@ -684,10 +703,14 @@ def _request_contacts(config, session):
         return
     session.step = session.Step.CONSENT
     session.save(update_fields=('step', 'updated_at'))
-    _send(config, session, _consent_text(config), reply_markup={'inline_keyboard': [[
-        {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
-        {'text': 'Не согласен', 'callback_data': 'consent:decline'},
-    ]]})
+    _send(
+        config,
+        session,
+        _consent_text(config) + '\n\nЕсли вы не согласны, напишите сообщением: «не согласен».',
+        reply_markup={'inline_keyboard': [[
+            {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
+        ]]},
+    )
 
 
 def _start_collection(config, session):
@@ -757,6 +780,17 @@ def _decline_consent(config, callback):
     _clear_active_documents(session)
     _answer_callback(config, callback, 'Хорошо, данные не сохраняем.')
     _send(config, session, 'Без согласия мы не будем собирать данные. Вы можете вернуться в любой момент.', reply_markup=_menu_keyboard())
+
+
+def _decline_consent_message(config, session):
+    session.step = session.Step.MENU
+    session.save(update_fields=('step', 'updated_at'))
+    _clear_active_documents(session)
+    _send(
+        config, session,
+        'Хорошо, данные не сохраняем. Вы можете вернуться в любой момент.',
+        reply_markup=_menu_keyboard(),
+    )
 
 
 def _select_claim_product(config, callback, registration_id):
@@ -967,6 +1001,19 @@ def _handle_message(config, message):
         session.step = session.Step.MENU
         session.save()
         _send(config, session, f'{config.welcome_text}\n\nЧто хотите сделать?', reply_markup=_menu_keyboard())
+        return
+    if session.step == session.Step.CONSENT:
+        normalized_consent_reply = re.sub(r'[^а-яё]+', ' ', text.casefold()).strip()
+        if normalized_consent_reply in ('не согласен', 'не согласна', 'я не согласен', 'я не согласна'):
+            _decline_consent_message(config, session)
+        else:
+            _send(
+                config, session,
+                'Чтобы продолжить, нажмите «Согласен ✅». Если вы не согласны, напишите: «не согласен».',
+                reply_markup={'inline_keyboard': [[
+                    {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
+                ]]},
+            )
         return
     if session.step == session.Step.LABEL and _save_photo(config, session, message, 'label'):
         if session.mode == session.Mode.REGISTRATION:
