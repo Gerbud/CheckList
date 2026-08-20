@@ -112,6 +112,20 @@ class WarrantyClaim(models.Model):
         return f'#{self.external_id} {self.product_name or self.customer_name}'
 
 
+class GreenworksDrawing(models.Model):
+    article = models.CharField('артикул Greenworks', max_length=120, unique=True)
+    links = models.JSONField('чертежи', default=list)
+    refreshed_at = models.DateTimeField('обновлено', auto_now=True)
+
+    class Meta:
+        verbose_name = 'чертёж Greenworks'
+        verbose_name_plural = 'чертежи Greenworks'
+        ordering = ('article',)
+
+    def __str__(self):
+        return self.article
+
+
 class WarrantyTelegramStatusButton(models.Model):
     source_status = models.CharField(
         'показывать при статусе', max_length=32, choices=WarrantyClaim.Status.choices,

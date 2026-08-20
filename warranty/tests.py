@@ -11,11 +11,30 @@ from django.urls import reverse
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
 from warranty.admin import WarrantyTelegramSettingsAdmin
-from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
+from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, update_claim_topic_message
+from warranty.greenworks import parse_catalog_page
 import warranty.telegram as warranty_telegram
+
+
+def test_greenworks_catalog_merges_drawings_for_same_article():
+    source = '''
+        <a href="?PAGEN_1=8">8</a>
+        <div class="manual-card"><p class="manual-card__code">Артикул 2516107</p>
+        <a class="green-link" href="/service/drawings-and-spare-parts-catalogs/16475/" title="До 2026"></a></div>
+        <div class="manual-card"><p class="manual-card__code">Артикул 2516107</p>
+        <a class="green-link" href="/service/drawings-and-spare-parts-catalogs/131524/" title="С 2026"></a></div>
+    '''
+
+    drawings, pages = parse_catalog_page(source)
+
+    assert pages == 8
+    assert [item['url'] for item in drawings['2516107']] == [
+        'https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/16475/',
+        'https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/131524/',
+    ]
 
 
 @pytest.mark.django_db
@@ -151,6 +170,7 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
         status=WarrantyClaim.Status.DIAGNOSTICS,
         product_name='Дрель & шуруповёрт',
         external_product_id='2178',
+        raw_source_data={'UF_ARTICLE': 'sku<2178>'},
         customer_name='Иван <Иванов>',
         phone='+7 (999) 123-45-67',
         defect='Не включается',
@@ -161,6 +181,7 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     message = _claim_message(claim)
 
     assert '<a href="https://shop.example/catalog/sku/2178/">Дрель &amp; шуруповёрт</a>' in message
+    assert '\n🏷 <b>Артикул:</b> <code>SKU&lt;2178&gt;</code>\n' in message
     assert 'Открыть товар' not in message
     assert '<a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>' in message
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
@@ -170,6 +191,32 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     assert '<b>Куплено у нас:</b> Да' in message
     assert '<b>Товар находится:</b> у клиента' in message
     assert message.endswith('🔗 <a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>')
+
+
+@pytest.mark.django_db
+def test_telegram_claim_message_has_greenworks_drawing():
+    GreenworksDrawing.objects.create(article='2516107', links=[{
+        'url': 'https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/131524/',
+        'title': '2516107 Exploded view',
+    }])
+    claim = WarrantyClaim.objects.create(
+        external_id=82,
+        product_name='(арт. 2516107) Газонокосилка Greenworks GD24LM33',
+    )
+
+    message = _claim_message(claim)
+
+    assert '📐 <a href="https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/131524/">2516107 Exploded view</a>' in message
+
+
+@pytest.mark.django_db
+def test_telegram_claim_message_omits_drawing_when_article_is_unknown():
+    claim = WarrantyClaim.objects.create(
+        external_id=83,
+        product_name='(арт. UNKNOWN) Неизвестный товар',
+    )
+
+    assert '📐' not in _claim_message(claim)
 
 
 @pytest.mark.django_db

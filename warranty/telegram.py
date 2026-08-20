@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from checklists.models import TelegramSystemSettings
 from checklists.telegram_client import OFFICIAL_API_BASE_URL, TelegramAPIError, send_telegram_request
+from warranty.greenworks import drawing_links_for_claim, product_article
 from warranty.models import WarrantyAttachment, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 
 
@@ -152,13 +153,26 @@ def _claim_message(claim):
         claim.status, '#статус_неизвестен',
     )
     repair_type = claim.get_warranty_type_display()
+    article = product_article(claim)
+    article_block = (
+        f'\n🏷 <b>Артикул:</b> <code>{html.escape(article)}</code>'
+        if article else ''
+    )
+    drawing_links = drawing_links_for_claim(claim)
+    drawings = '\n'.join(
+        f'📐 <a href="{html.escape(item["url"], quote=True)}">'
+        f'{html.escape(item.get("title") or "Чертёж Greenworks")}</a>'
+        for item in drawing_links
+        if item.get('url')
+    )
+    drawings_block = f'\n{drawings}' if drawings else ''
     return (
         f'🛡 <b>Гарантийное обращение №{claim.external_id}</b>\n\n'
         f'🏷 <b>Статус:</b> {html.escape(claim.get_status_display())} {status_hashtag}\n'
         f'🛠 <b>Тип ремонта:</b> {html.escape(repair_type)}\n'
         f'🏪 <b>Куплено у нас:</b> {purchased_from_us}\n'
         f'📍 <b>Товар находится:</b> {product_location}\n\n'
-        f'📦 <b>Товар</b>\n{product}\n\n'
+        f'📦 <b>Товар</b>\n{product}{article_block}{drawings_block}\n\n'
         f'👤 <b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
         f'📞 <b>Телефон:</b> {phone}\n\n'
         f'🛠 <b>Неисправность</b>\n{html.escape(claim.defect or "—")}\n\n'
