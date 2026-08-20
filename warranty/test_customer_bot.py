@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _handle_support_reply, _label_confirmation, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_support_reply, _label_confirmation, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -184,6 +184,45 @@ def test_purchase_registration_is_idempotent(monkeypatch):
     profile.refresh_from_db()
     assert WarrantyProductRegistration.objects.filter(profile=profile).count() == 1
     assert profile.phone == '+79991234567'
+
+
+def test_multiple_products_are_registered_with_one_purchase(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    profile = WarrantyCustomerProfile.objects.create(
+        telegram_user_id='503', chat_id='603', consent_version=config.consent_version,
+        consent_text='Согласие', consent_accepted_at=timezone.now(),
+    )
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='503', chat_id='603', full_name='Иван Иванов', phone='+79991234567',
+        article='A-2', serial_number='SN-2', purchase_date=date(2026, 8, 20),
+        mode=WarrantyCustomerSession.Mode.REGISTRATION, step=WarrantyCustomerSession.Step.READY,
+        raw_ocr_data={'products': [
+            {'article': 'A-1', 'serial_number': 'SN-1'},
+            {'article': 'A-2', 'serial_number': 'SN-2'},
+        ]},
+    )
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
+    monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {})
+    _activate_registration(config, {'id': 'cb-register-many', 'from': {'id': 503}})
+    assert set(WarrantyProductRegistration.objects.filter(profile=profile).values_list('serial_number', flat=True)) == {'SN-1', 'SN-2'}
+    session.refresh_from_db()
+    assert session.step == session.Step.SUBMITTED
+
+
+def test_done_collecting_labels_moves_registration_to_receipt(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='504', chat_id='604', mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.LABEL,
+        raw_ocr_data={'products': [{'article': 'A-1', 'serial_number': 'SN-1'}]},
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append(text))
+    _finish_registration_labels(config, {'id': 'cb-labels-done', 'from': {'id': 504}})
+    session.refresh_from_db()
+    assert session.step == session.Step.RECEIPT
+    assert 'Добавлено товаров: 1' in sent[-1]
 
 
 def test_arbitrary_messages_use_one_forum_topic_per_customer(monkeypatch):

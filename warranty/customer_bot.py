@@ -492,20 +492,41 @@ def _activate_registration(config, callback):
     profile.full_name, profile.phone = session.full_name, session.phone
     profile.save()
     active_documents = _active_documents(session)
-    registration, created = WarrantyProductRegistration.objects.get_or_create(
-        profile=profile, serial_number=session.serial_number,
-        defaults={
-            'article': session.article, 'purchase_date': session.purchase_date,
-            'label_document': active_documents.filter(kind='label').order_by('-id').first(),
-            'receipt_document': active_documents.filter(kind='receipt').order_by('-id').first(),
-            'raw_ocr_data': session.raw_ocr_data,
-        },
-    )
+    receipt = active_documents.filter(kind='receipt').order_by('-id').first()
+    products = session.raw_ocr_data.get('products') or [{
+        'article': session.article,
+        'serial_number': session.serial_number,
+        'document_id': getattr(active_documents.filter(kind='label').order_by('-id').first(), 'pk', None),
+    }]
+    registrations = []
+    created_count = 0
+    for item in products:
+        article = str(item.get('article') or '').strip()
+        serial_number = str(item.get('serial_number') or '').strip()
+        if not article or not serial_number:
+            continue
+        registration, created = WarrantyProductRegistration.objects.get_or_create(
+            profile=profile, serial_number=serial_number,
+            defaults={
+                'article': article, 'purchase_date': session.purchase_date,
+                'label_document_id': item.get('document_id'),
+                'receipt_document': receipt,
+                'raw_ocr_data': item,
+            },
+        )
+        registrations.append(registration)
+        created_count += int(created)
+    if not registrations:
+        _answer_callback(config, callback, 'Не удалось сохранить товары: проверьте артикулы и серийные номера.')
+        return
     session.step = session.Step.SUBMITTED
     session.save(update_fields=('step', 'updated_at'))
     _answer_callback(config, callback, 'Гарантия активирована!')
-    verb = 'уже была зарегистрирована' if not created else 'активирована'
-    _send(config, session, f'Готово 🎉 Электронная гарантия на {registration.article}, серийный номер {registration.serial_number}, {verb}. Чек сохранён — если понадобится помощь, приезжать для подачи обращения не нужно.', reply_markup=_menu_keyboard())
+    already_count = len(registrations) - created_count
+    summary = f'Активировано товаров: {created_count}.'
+    if already_count:
+        summary += f' Уже были зарегистрированы: {already_count}.'
+    _send(config, session, f'Готово 🎉 {summary} Общий чек сохранён — если понадобится помощь, приезжать для подачи обращения не нужно.', reply_markup=_menu_keyboard())
 
 
 def _save_photo(config, session, message, kind):
@@ -518,13 +539,12 @@ def _save_photo(config, session, message, kind):
         return False
     file_id = photos[-1]['file_id']
     content, content_type, extension = _download_photo(config, file_id)
-    WarrantyCustomerDocument.objects.create(
+    document = WarrantyCustomerDocument.objects.create(
         session=session, kind=kind, telegram_file_id=file_id,
         telegram_message_id=str(message['message_id']), content_type=content_type,
         file=ContentFile(content, name=f'{kind}-{message["message_id"]}.{extension}'),
     )
     recognized = _recognize(config, content, content_type, kind)
-    session.raw_ocr_data = {**session.raw_ocr_data, kind: recognized}
     if kind == 'label':
         session.article = str(recognized.get('article') or '').strip()[:255]
         session.serial_number = str(recognized.get('serial_number') or '').strip()[:255]
@@ -533,12 +553,20 @@ def _save_photo(config, session, message, kind):
                 recognized['product'] = find_pinel_product(session.article) or {}
             except ProductImportError:
                 recognized['product'] = {}
+        recognized['document_id'] = document.pk
+        raw_data = {**session.raw_ocr_data, kind: recognized}
+        if session.mode == session.Mode.REGISTRATION:
+            raw_data['products'] = [*(session.raw_ocr_data.get('products') or []), dict(recognized)]
+        session.raw_ocr_data = raw_data
     elif kind == 'receipt':
         session.purchase_date = parse_date(str(recognized.get('purchase_date') or ''))
+        session.raw_ocr_data = {**session.raw_ocr_data, kind: recognized}
+    else:
+        session.raw_ocr_data = {**session.raw_ocr_data, kind: recognized}
     return True
 
 
-def _label_confirmation(session):
+def _label_confirmation(session, receipt_prompt=True):
     label_data = session.raw_ocr_data.get('label') or {}
     product = label_data.get('product') or {}
     name = str(product.get('name') or session.article or 'Товар').strip()
@@ -550,11 +578,72 @@ def _label_confirmation(session):
         product_line += f'\nСсылка: {url}'
     article = session.article or 'не удалось распознать'
     serial = session.serial_number or 'не удалось распознать'
-    return (
+    text = (
         f'Отлично, товар найден 👍\n{product_line}\n'
-        f'Артикул: {article}\nСерийный номер: {serial}\n\n'
-        'Теперь пришлите фото чека 🧾'
+        f'Артикул: {article}\nСерийный номер: {serial}'
     )
+    return text + ('\n\nТеперь пришлите фото чека 🧾' if receipt_prompt else '')
+
+
+def _registration_labels_keyboard():
+    return {'inline_keyboard': [[{
+        'text': 'Все товары добавлены — перейти к чеку 🧾',
+        'callback_data': 'registration:labels:done',
+    }]]}
+
+
+def _finish_registration_labels(config, callback):
+    sender = callback.get('from') or {}
+    session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
+    products = session.raw_ocr_data.get('products') or []
+    if session.mode != session.Mode.REGISTRATION or session.step != session.Step.LABEL or not products:
+        _answer_callback(config, callback, 'Сначала пришлите хотя бы одну этикетку.')
+        return
+    _answer_callback(config, callback)
+    _continue_registration_label_validation(config, session)
+
+
+def _continue_registration_label_validation(config, session):
+    raw_data = dict(session.raw_ocr_data)
+    products = list(raw_data.get('products') or [])
+    for index, item in enumerate(products):
+        missing = 'article' if not str(item.get('article') or '').strip() else (
+            'serial_number' if not str(item.get('serial_number') or '').strip() else ''
+        )
+        if not missing:
+            continue
+        raw_data['editing_product_index'] = index
+        session.raw_ocr_data = raw_data
+        session.article = str(item.get('article') or '')
+        session.serial_number = str(item.get('serial_number') or '')
+        session.step = session.Step.ARTICLE if missing == 'article' else session.Step.SERIAL
+        session.save()
+        field_name = 'артикул' if missing == 'article' else 'серийный номер'
+        _send(config, session, f'У товара №{index + 1} не удалось распознать {field_name}. Напишите его вручную.')
+        return
+    raw_data.pop('editing_product_index', None)
+    session.raw_ocr_data = raw_data
+    session.step = session.Step.RECEIPT
+    session.save()
+    _send(config, session, f'Добавлено товаров: {len(products)}. Теперь пришлите фото общего чека 🧾')
+
+
+def _save_manually_entered_product_field(config, session, field, value):
+    index = session.raw_ocr_data.get('editing_product_index')
+    if session.mode != session.Mode.REGISTRATION or index is None:
+        return False
+    raw_data = dict(session.raw_ocr_data)
+    products = list(raw_data.get('products') or [])
+    if not 0 <= int(index) < len(products):
+        return False
+    products[int(index)] = {**products[int(index)], field: value[:255]}
+    raw_data['products'] = products
+    session.raw_ocr_data = raw_data
+    session.article = str(products[int(index)].get('article') or '')
+    session.serial_number = str(products[int(index)].get('serial_number') or '')
+    session.save()
+    _continue_registration_label_validation(config, session)
+    return True
 
 
 def _handle_message(config, message):
@@ -578,9 +667,18 @@ def _handle_message(config, message):
         _send(config, session, f'{config.welcome_text}\n\nЧто хотите сделать?', reply_markup=_menu_keyboard())
         return
     if session.step == session.Step.LABEL and _save_photo(config, session, message, 'label'):
-        session.step = session.Step.RECEIPT
-        session.save()
-        _send(config, session, _label_confirmation(session))
+        if session.mode == session.Mode.REGISTRATION:
+            session.save()
+            _send(
+                config, session,
+                _label_confirmation(session, receipt_prompt=False)
+                + '\n\nПришлите остальные этикетки. Когда все товары добавлены, нажмите кнопку ниже — затем пришлёте общий чек.',
+                reply_markup=_registration_labels_keyboard(),
+            )
+        else:
+            session.step = session.Step.RECEIPT
+            session.save()
+            _send(config, session, _label_confirmation(session))
     elif session.step == session.Step.WARRANTY_CARD and _save_photo(config, session, message, 'warranty_card'):
         if session.phone and session.full_name:
             _show_next(config, session)
@@ -602,9 +700,11 @@ def _handle_message(config, message):
         if len(text.split()) < 2: _send(config, session, 'Пожалуйста, укажите фамилию, имя и отчество (если есть).'); return
         session.full_name = text[:255]; _show_next(config, session)
     elif session.step == session.Step.ARTICLE and text:
-        session.article = text[:255]; _show_next(config, session)
+        if not _save_manually_entered_product_field(config, session, 'article', text):
+            session.article = text[:255]; _show_next(config, session)
     elif session.step == session.Step.SERIAL and text:
-        session.serial_number = text[:255]; _show_next(config, session)
+        if not _save_manually_entered_product_field(config, session, 'serial_number', text):
+            session.serial_number = text[:255]; _show_next(config, session)
     elif session.step == session.Step.PURCHASE_DATE:
         try: session.purchase_date = datetime.strptime(text, '%d.%m.%Y').date()
         except ValueError: _send(config, session, 'Введите дату в формате ДД.ММ.ГГГГ.'); return
@@ -680,6 +780,7 @@ def customer_bot_webhook(request):
             elif data == 'flow:claim': _start_flow(config, callback, WarrantyCustomerSession.Mode.CLAIM)
             elif data == 'consent:accept': _accept_consent(config, callback)
             elif data == 'consent:decline': _decline_consent(config, callback)
+            elif data == 'registration:labels:done': _finish_registration_labels(config, callback)
             elif data.startswith('claim:product:'): _select_claim_product(config, callback, data.rsplit(':', 1)[-1])
             elif data == 'warranty:activate': _activate_registration(config, callback)
             elif data == 'warranty:create': _create_claim(config, callback)
