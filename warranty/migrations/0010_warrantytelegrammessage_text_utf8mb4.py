@@ -11,6 +11,7 @@ def use_utf8mb4_for_message_text(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
     dependencies = [('warranty', '0009_alter_warrantytelegramsettings_chat_id_and_more')]
 
     operations = [
