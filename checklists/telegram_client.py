@@ -26,6 +26,7 @@ GET_METHODS = {
 }
 SUPPORTED_METHODS = {
     'sendMessage',
+    'sendDocument',
     'editMessageText',
     'answerCallbackQuery',
     'getMe',

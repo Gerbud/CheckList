@@ -140,6 +140,7 @@ def import_claim_rows(rows):
                 'external_created_by_id': _string(row.get('UF_CREATE_BY')),
                 'created_by_name': _string(row.get('CREATED_BY_NAME')),
                 'product_name': _string(row.get('UF_PRODUCT_NAME')),
+                'article': _string(row.get('UF_ARTICLE')),
                 'external_product_id': _string(row.get('UF_PRODUCT_ID')),
                 'serial_number': _string(row.get('UF_SERIAL_NUMBER')),
                 'defect': _string(row.get('UF_DEFECT')),

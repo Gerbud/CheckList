@@ -40,6 +40,81 @@ class WarrantyTelegramSettings(models.Model):
         return super().save(*args, **kwargs)
 
 
+class WarrantyCustomerBotSettings(models.Model):
+    bot_token = models.CharField('токен клиентского бота', max_length=255, blank=True)
+    webhook_secret_token = models.CharField('секрет webhook', max_length=255, blank=True)
+    is_enabled = models.BooleanField('бот включён', default=False)
+    ocr_api_key = models.CharField('ключ OpenAI для распознавания', max_length=255, blank=True)
+    ocr_model = models.CharField('модель распознавания', max_length=64, default='gpt-4.1-mini')
+    welcome_text = models.TextField('приветствие', default='Здравствуйте! Я помогу оформить гарантийное обращение. Пришлите фото этикетки изделия.')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'настройка клиентского бота гарантии'
+        verbose_name_plural = 'настройки клиентского бота гарантии'
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        if self.pk not in (None, 1):
+            raise ValidationError('Допустима только одна настройка.')
+        self.pk = 1
+        return super().save(*args, **kwargs)
+
+
+class WarrantyCustomerSession(models.Model):
+    class Step(models.TextChoices):
+        LABEL = 'label', 'Фото этикетки'
+        WARRANTY_CARD = 'warranty_card', 'Фото гарантийного талона'
+        RECEIPT = 'receipt', 'Фото чека'
+        PHONE = 'phone', 'Телефон'
+        FULL_NAME = 'full_name', 'ФИО'
+        ARTICLE = 'article', 'Артикул вручную'
+        SERIAL = 'serial', 'Серийный номер вручную'
+        PURCHASE_DATE = 'purchase_date', 'Дата покупки вручную'
+        READY = 'ready', 'Подтверждение'
+        SUBMITTED = 'submitted', 'Оформлено'
+
+    telegram_user_id = models.CharField(max_length=64, unique=True)
+    chat_id = models.CharField(max_length=64)
+    username = models.CharField(max_length=255, blank=True)
+    full_name = models.CharField('ФИО', max_length=255, blank=True)
+    phone = models.CharField('телефон', max_length=64, blank=True)
+    article = models.CharField('артикул', max_length=255, blank=True)
+    serial_number = models.CharField('серийный номер', max_length=255, blank=True)
+    purchase_date = models.DateField('дата покупки', null=True, blank=True)
+    step = models.CharField(max_length=32, choices=Step.choices, default=Step.LABEL)
+    external_claim_id = models.PositiveBigIntegerField(null=True, blank=True)
+    telegram_message_ids = models.JSONField(default=list, blank=True)
+    raw_ocr_data = models.JSONField(default=dict, blank=True)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class WarrantyCustomerDocument(models.Model):
+    class Kind(models.TextChoices):
+        LABEL = 'label', 'Этикетка'
+        WARRANTY_CARD = 'warranty_card', 'Гарантийный талон'
+        RECEIPT = 'receipt', 'Чек'
+
+    session = models.ForeignKey(WarrantyCustomerSession, on_delete=models.CASCADE, related_name='documents')
+    kind = models.CharField(max_length=24, choices=Kind.choices)
+    telegram_file_id = models.CharField(max_length=255)
+    telegram_message_id = models.CharField(max_length=64)
+    file = models.FileField(upload_to='warranty/customer/%Y/%m/')
+    content_type = models.CharField(max_length=128, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class WarrantyCustomerUpdate(models.Model):
+    update_id = models.PositiveBigIntegerField(unique=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+
+
 class WarrantyClaim(models.Model):
     class Status(models.TextChoices):
         NEW = 'new', 'Новый'
@@ -74,6 +149,7 @@ class WarrantyClaim(models.Model):
     external_created_by_id = models.CharField('ID автора в источнике', max_length=64, blank=True)
     created_by_name = models.CharField('создал', max_length=255, blank=True)
     product_name = models.CharField('товар', max_length=500, blank=True)
+    article = models.CharField('артикул', max_length=255, blank=True)
     external_product_id = models.CharField('ID товара в источнике', max_length=64, blank=True)
     serial_number = models.CharField('серийный номер', max_length=255, blank=True)
     defect = models.TextField('неисправность', blank=True)

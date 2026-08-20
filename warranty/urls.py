@@ -1,10 +1,12 @@
 from django.urls import path
 
 from warranty import views
+from warranty.customer_bot import customer_bot_webhook
 
 app_name = 'warranty'
 
 urlpatterns = [
+    path('customer-bot/webhook/', customer_bot_webhook, name='customer_bot_webhook'),
     path('settings/bitrix/', views.bitrix_settings, name='bitrix_settings'),
     path('', views.claim_list, name='claim_list'),
     path('<int:claim_id>/', views.claim_detail, name='claim_detail'),

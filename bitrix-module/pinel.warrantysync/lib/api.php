@@ -8,6 +8,7 @@ final class Api
 {
     private const MODULE_ID = 'pinel.warrantysync';
     private const ALLOWED_FIELDS = array('UF_STATUS', 'UF_COMMENT');
+    private const CREATE_FIELDS = array('UF_FIO', 'UF_PHONE', 'UF_TYPE', 'UF_PRODUCT_NAME', 'UF_ARTICLE', 'UF_SERIAL_NUMBER', 'UF_DATE_OF_PURCHASE', 'UF_COMMENT');
 
     public static function handle($raw, array $server)
     {
@@ -24,13 +25,17 @@ final class Api
         switch ($action) {
             case 'health':
                 self::assertSchema();
-                return array('module' => self::MODULE_ID, 'version' => '1.1.0');
+                return array('module' => self::MODULE_ID, 'version' => '1.2.0');
             case 'claims.list':
                 return self::listClaims($payload);
             case 'claims.update':
                 return self::updateClaim($payload);
             case 'claims.files.add':
                 return self::addClaimFile($payload);
+            case 'claims.create':
+                return self::createClaim($payload);
+            case 'claims.blank':
+                return self::claimBlank($payload);
             default:
                 throw new \InvalidArgumentException('Неизвестное действие.');
         }
@@ -243,5 +248,51 @@ final class Api
             "UPDATE warranty SET UF_OTHER_FILES='" . $helper->forSql(implode('/', $fileIds)) . "' WHERE ID=" . $id
         );
         return array('id' => $id, 'fileId' => $fileId, 'duplicate' => false);
+    }
+
+    private static function createClaim(array $payload)
+    {
+        self::assertSchema();
+        $fields = isset($payload['fields']) && is_array($payload['fields']) ? $payload['fields'] : array();
+        foreach (array('UF_FIO', 'UF_PHONE', 'UF_PRODUCT_NAME', 'UF_SERIAL_NUMBER', 'UF_DATE_OF_PURCHASE') as $required) {
+            if (trim((string)(isset($fields[$required]) ? $fields[$required] : '')) === '') {
+                throw new \InvalidArgumentException('Не заполнено обязательное поле ' . $required . '.');
+            }
+        }
+        if (!preg_match('/^\+?[0-9]{10,15}$/', (string)$fields['UF_PHONE'])) {
+            throw new \InvalidArgumentException('Некорректный телефон.');
+        }
+        $columns = self::columns('warranty');
+        $helper = self::connection()->getSqlHelper();
+        $insert = array('UF_STATUS' => '1', 'UF_CREATE_BY' => '0', 'UF_USER_ID' => '0');
+        foreach (self::CREATE_FIELDS as $field) {
+            if (isset($columns[$field]) && array_key_exists($field, $fields)) {
+                $insert[$field] = trim((string)$fields[$field]);
+            }
+        }
+        if (isset($columns['UF_CREATE_DATE'])) {
+            $insert['UF_CREATE_DATE'] = date('Y-m-d H:i:s');
+        }
+        $names = array(); $values = array();
+        foreach ($insert as $name => $value) {
+            if (!isset($columns[$name])) continue;
+            $names[] = '`' . $name . '`';
+            $values[] = "'" . $helper->forSql($value) . "'";
+        }
+        $connection = self::connection();
+        $connection->queryExecute('INSERT INTO warranty (' . implode(',', $names) . ') VALUES (' . implode(',', $values) . ')');
+        $id = (int)$connection->getInsertedId();
+        if ($id < 1) throw new \RuntimeException('Bitrix не создал обращение.');
+        return array('id' => $id);
+    }
+
+    private static function claimBlank(array $payload)
+    {
+        $id = (int)(isset($payload['id']) ? $payload['id'] : 0);
+        if ($id < 1) throw new \InvalidArgumentException('Некорректный ID обращения.');
+        $path = \Autobud\Helpers\Warranty::getInstance()->createFile($id);
+        if (!$path) throw new \RuntimeException('Не удалось сформировать PDF-бланк.');
+        $relative = str_replace(app()->getDocumentRoot(), '', $path);
+        return array('id' => $id, 'url' => 'https://pinel.ru' . $relative);
     }
 }

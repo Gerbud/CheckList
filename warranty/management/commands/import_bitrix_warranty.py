@@ -90,6 +90,7 @@ class Command(BaseCommand):
                 'external_created_by_id': clean_string(row.get('UF_CREATE_BY')),
                 'created_by_name': clean_string(row.get('CREATED_BY_NAME')),
                 'product_name': clean_string(row.get('UF_PRODUCT_NAME')),
+                'article': clean_string(row.get('UF_ARTICLE')),
                 'external_product_id': clean_string(row.get('UF_PRODUCT_ID')),
                 'serial_number': clean_string(row.get('UF_SERIAL_NUMBER')),
                 'defect': clean_string(row.get('UF_DEFECT')),

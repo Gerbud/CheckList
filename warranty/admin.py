@@ -2,10 +2,22 @@ from django import forms
 from django.contrib import admin, messages
 from django.utils.html import format_html, format_html_join
 
-from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
+from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
 
 for model in (WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramThread, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
     admin.site.register(model)
+
+admin.site.register(WarrantyCustomerSession)
+admin.site.register(WarrantyCustomerDocument)
+admin.site.register(WarrantyCustomerUpdate)
+
+
+@admin.register(WarrantyCustomerBotSettings)
+class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
+    fields = ('bot_token', 'webhook_secret_token', 'is_enabled', 'ocr_api_key', 'ocr_model', 'welcome_text')
+
+    def has_add_permission(self, request):
+        return not WarrantyCustomerBotSettings.objects.exists()
 
 
 @admin.register(WarrantyClaim)
