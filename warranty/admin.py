@@ -184,8 +184,8 @@ class WarrantyCustomerBotSettingsAdmin(SingletonSettingsAdmin):
                 obj.webhook_url = actual_url
                 obj.webhook_checked_at = timezone.now()
                 obj.webhook_pending_updates = pending
-                obj.webhook_last_error = error
-                level = messages.SUCCESS if actual_url == webhook_url and not error else messages.WARNING
+                obj.webhook_last_error = error if pending else ''
+                level = messages.SUCCESS if actual_url == webhook_url and not obj.webhook_last_error else messages.WARNING
                 self.message_user(request, f'Webhook: {actual_url or "не зарегистрирован"}. В очереди: {pending}.', level)
             else:
                 _telegram(obj, 'deleteWebhook', {'drop_pending_updates': False})

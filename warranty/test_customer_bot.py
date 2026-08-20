@@ -1,15 +1,97 @@
 from datetime import date
+from io import BytesIO
+from urllib import error
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _customer_bot_commands, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _resolve_consultation, _route_to_support, _save_manually_entered_product_field, _start_product_consultation, _start_support_chat
-from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
+from warranty.customer_bot import CustomerTelegramError, OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _customer_bot_commands, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _resolve_consultation, _route_to_support, _save_manually_entered_product_field, _start_product_consultation, _start_support_chat, _telegram
+from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
 pytestmark = pytest.mark.django_db
+
+
+def _enabled_webhook_config():
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.bot_token = 'test-token'
+    config.webhook_secret_token = 'test-secret'
+    config.is_enabled = True
+    config.save()
+    return config
+
+
+def test_customer_telegram_http_error_keeps_real_reason(monkeypatch):
+    config = WarrantyCustomerBotSettings(bot_token='test-token')
+    response = BytesIO(b'{"ok":false,"description":"Forbidden: bot cannot send messages"}')
+    api_error = error.HTTPError('https://telegram.invalid', 403, 'Forbidden', {}, response)
+    monkeypatch.setattr('warranty.customer_bot.request.urlopen', lambda *args, **kwargs: (_ for _ in ()).throw(api_error))
+
+    with pytest.raises(CustomerTelegramError) as caught:
+        _telegram(config, 'sendMessage', {'chat_id': '-1001', 'text': 'test'})
+
+    assert str(caught.value) == 'Telegram sendMessage: Forbidden: bot cannot send messages'
+    assert caught.value.retryable is False
+
+
+def test_customer_webhook_ignores_non_private_customer_flow(client, monkeypatch):
+    config = _enabled_webhook_config()
+    config.webhook_last_error = 'old delivery error'
+    config.save(update_fields=('webhook_last_error', 'updated_at'))
+    monkeypatch.setattr('warranty.customer_bot._handle_support_reply', lambda *args: False)
+    monkeypatch.setattr('warranty.customer_bot._handle_message', lambda *args: pytest.fail('group must not start customer flow'))
+
+    response = client.post(
+        '/warranty/customer-bot/webhook/',
+        data={'update_id': 900001, 'message': {
+            'message_id': 1, 'chat': {'id': -1001, 'type': 'group'},
+            'from': {'id': 10}, 'text': '/start',
+        }},
+        content_type='application/json',
+        HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN='test-secret',
+    )
+
+    assert response.status_code == 200
+    assert WarrantyCustomerUpdate.objects.filter(update_id=900001).exists()
+    assert not WarrantyCustomerSession.objects.filter(telegram_user_id='10').exists()
+    config.refresh_from_db()
+    assert config.webhook_last_error == ''
+
+
+@pytest.mark.parametrize(
+    ('retryable', 'expected_status', 'update_status'),
+    (
+        (False, 200, WarrantyCustomerUpdate.Status.IGNORED),
+        (True, 503, WarrantyCustomerUpdate.Status.RETRY),
+    ),
+)
+def test_customer_webhook_retries_only_temporary_telegram_errors(
+    client, monkeypatch, retryable, expected_status, update_status,
+):
+    _enabled_webhook_config()
+    monkeypatch.setattr('warranty.customer_bot._handle_support_reply', lambda *args: False)
+    monkeypatch.setattr(
+        'warranty.customer_bot._handle_message',
+        lambda *args: (_ for _ in ()).throw(CustomerTelegramError('Telegram sendMessage: failed', retryable=retryable)),
+    )
+
+    update_id = 900010 + int(retryable)
+    response = client.post(
+        '/warranty/customer-bot/webhook/',
+        data={'update_id': update_id, 'message': {
+            'message_id': 1, 'chat': {'id': 10, 'type': 'private'},
+            'from': {'id': 10}, 'text': '/start',
+        }},
+        content_type='application/json',
+        HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN='test-secret',
+    )
+
+    assert response.status_code == expected_status
+    saved = WarrantyCustomerUpdate.objects.get(update_id=update_id)
+    assert saved.status == update_status
+    assert saved.last_error == 'Telegram sendMessage: failed'
 
 
 def test_phone_normalization():

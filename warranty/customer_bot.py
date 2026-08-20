@@ -5,6 +5,7 @@ import re
 import secrets
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -27,6 +28,12 @@ class OpenAIModelUnavailable(RuntimeError):
     pass
 
 
+class CustomerTelegramError(RuntimeError):
+    def __init__(self, message, *, retryable=False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
 def _customer_bot_commands():
     return [
         {'command': 'start', 'description': 'Главное меню'},
@@ -37,14 +44,41 @@ def _customer_bot_commands():
 def _telegram(config, method, payload):
     url = f'https://api.telegram.org/bot{config.bot_token}/{method}'
     body = json.dumps(payload, ensure_ascii=False).encode()
-    try:
-        with request.urlopen(request.Request(url, data=body, headers={'Content-Type': 'application/json'}), timeout=15) as response:
-            data = json.loads(response.read())
-    except (error.URLError, TimeoutError, ValueError) as exc:
-        raise RuntimeError('Telegram временно недоступен.') from exc
+    api_request = request.Request(url, data=body, headers={'Content-Type': 'application/json'})
+    data = None
+    for attempt in range(3):
+        try:
+            with request.urlopen(api_request, timeout=15) as response:
+                data = json.loads(response.read())
+            break
+        except error.HTTPError as exc:
+            try:
+                response_data = json.loads(exc.read())
+                description = str(response_data.get('description') or exc.reason)
+            except (ValueError, AttributeError):
+                description = str(exc.reason or f'HTTP {exc.code}')
+            retryable = exc.code == 429 or exc.code >= 500
+            if retryable and attempt < 2:
+                time.sleep(0.4 * (attempt + 1))
+                continue
+            raise CustomerTelegramError(
+                f'Telegram {method}: {description}', retryable=retryable,
+            ) from exc
+        except (error.URLError, TimeoutError) as exc:
+            reason = str(getattr(exc, 'reason', exc))
+            if attempt < 2:
+                time.sleep(0.4 * (attempt + 1))
+                continue
+            raise CustomerTelegramError(
+                f'Telegram {method}: ошибка соединения ({reason})', retryable=True,
+            ) from exc
+        except ValueError as exc:
+            raise CustomerTelegramError(
+                f'Telegram {method}: некорректный ответ', retryable=True,
+            ) from exc
     if not data.get('ok'):
         description = str(data.get('description') or 'неизвестная ошибка')
-        raise RuntimeError(f'Telegram не принял запрос: {description}')
+        raise CustomerTelegramError(f'Telegram {method}: {description}')
     return data.get('result')
 
 
@@ -1228,11 +1262,30 @@ def customer_bot_webhook(request):
     try:
         update = json.loads(request.body)
         update_id = int(update['update_id'])
-        update_log, created = WarrantyCustomerUpdate.objects.get_or_create(update_id=update_id)
-        if not created:
+        update_log, created = WarrantyCustomerUpdate.objects.get_or_create(
+            update_id=update_id,
+            defaults={'status': WarrantyCustomerUpdate.Status.PROCESSING},
+        )
+        if not created and update_log.status in (
+            WarrantyCustomerUpdate.Status.SUCCEEDED,
+            WarrantyCustomerUpdate.Status.IGNORED,
+        ):
             return JsonResponse({'ok': True})
+        if not created:
+            update_log.attempts += 1
+            update_log.status = WarrantyCustomerUpdate.Status.PROCESSING
+            update_log.last_error = ''
+            update_log.save(update_fields=('attempts', 'status', 'last_error'))
         if update.get('callback_query'):
             callback = update['callback_query']
+            if callback.get('message', {}).get('chat', {}).get('type') != 'private':
+                update_log.status = WarrantyCustomerUpdate.Status.IGNORED
+                update_log.completed_at = timezone.now()
+                update_log.save(update_fields=('status', 'completed_at'))
+                config.webhook_checked_at = timezone.now()
+                config.webhook_last_error = ''
+                config.save(update_fields=('webhook_checked_at', 'webhook_last_error', 'updated_at'))
+                return JsonResponse({'ok': True, 'ignored': 'non-private callback'})
             data = callback.get('data') or ''
             if data == 'flow:registration': _start_flow(config, callback, WarrantyCustomerSession.Mode.REGISTRATION)
             elif data == 'flow:claim': _start_flow(config, callback, WarrantyCustomerSession.Mode.CLAIM)
@@ -1248,15 +1301,44 @@ def customer_bot_webhook(request):
             elif data == 'warranty:create': _create_claim(config, callback)
         elif update.get('message'):
             message = update['message']
-            if not _handle_support_reply(config, message):
+            if not _handle_support_reply(config, message) and message.get('chat', {}).get('type') == 'private':
                 _handle_message(config, message)
-    except (ValueError, KeyError, WarrantyCustomerSession.DoesNotExist, WarrantyCustomerProfile.DoesNotExist, WarrantyProductRegistration.DoesNotExist):
-        return JsonResponse({'error': 'invalid update'}, status=400)
+    except (ValueError, KeyError, WarrantyCustomerSession.DoesNotExist, WarrantyCustomerProfile.DoesNotExist, WarrantyProductRegistration.DoesNotExist) as exc:
+        if 'update_log' in locals():
+            update_log.status = WarrantyCustomerUpdate.Status.IGNORED
+            update_log.last_error = f'{type(exc).__name__}: {exc}'[:2000]
+            update_log.completed_at = timezone.now()
+            update_log.save(update_fields=('status', 'last_error', 'completed_at'))
+        return JsonResponse({'ok': True, 'warning': 'invalid update'})
+    except CustomerTelegramError as exc:
+        if 'update_log' in locals():
+            update_log.status = (
+                WarrantyCustomerUpdate.Status.RETRY if exc.retryable
+                else WarrantyCustomerUpdate.Status.IGNORED
+            )
+            update_log.last_error = str(exc)[:2000]
+            update_log.completed_at = None if exc.retryable else timezone.now()
+            update_log.save(update_fields=('status', 'last_error', 'completed_at'))
+        config.webhook_checked_at = timezone.now()
+        config.webhook_last_error = str(exc)[:2000] if exc.retryable else ''
+        config.save(update_fields=('webhook_checked_at', 'webhook_last_error', 'updated_at'))
+        if exc.retryable:
+            return JsonResponse({'error': str(exc)}, status=503)
+        return JsonResponse({'ok': True, 'warning': str(exc)})
     except (RuntimeError, BitrixSyncError) as exc:
         if 'update_log' in locals():
-            update_log.delete()
+            update_log.status = WarrantyCustomerUpdate.Status.RETRY
+            update_log.last_error = str(exc)[:2000]
+            update_log.save(update_fields=('status', 'last_error'))
         config.webhook_checked_at = timezone.now()
         config.webhook_last_error = str(exc)[:2000]
         config.save(update_fields=('webhook_checked_at', 'webhook_last_error', 'updated_at'))
         return JsonResponse({'error': str(exc)}, status=503)
+    update_log.status = WarrantyCustomerUpdate.Status.SUCCEEDED
+    update_log.last_error = ''
+    update_log.completed_at = timezone.now()
+    update_log.save(update_fields=('status', 'last_error', 'completed_at'))
+    config.webhook_checked_at = timezone.now()
+    config.webhook_last_error = ''
+    config.save(update_fields=('webhook_checked_at', 'webhook_last_error', 'updated_at'))
     return JsonResponse({'ok': True})

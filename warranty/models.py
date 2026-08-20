@@ -251,8 +251,18 @@ class WarrantyProductRegistration(models.Model):
 
 
 class WarrantyCustomerUpdate(models.Model):
+    class Status(models.TextChoices):
+        PROCESSING = 'processing', 'Обрабатывается'
+        SUCCEEDED = 'succeeded', 'Обработано'
+        RETRY = 'retry', 'Ожидает повтора'
+        IGNORED = 'ignored', 'Пропущено'
+
     update_id = models.PositiveBigIntegerField(unique=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.SUCCEEDED)
+    attempts = models.PositiveIntegerField(default=1)
+    last_error = models.TextField(blank=True)
     received_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
 
 class WarrantyCustomerSupportThread(models.Model):
