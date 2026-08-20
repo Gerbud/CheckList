@@ -21,6 +21,16 @@ def seed_status_icons(apps, schema_editor):
     ])
 
 
+def use_utf8mb4_for_emoji(apps, schema_editor):
+    if schema_editor.connection.vendor != 'mysql':
+        return
+    schema_editor.execute(
+        'ALTER TABLE warranty_warrantytelegramstatusicon '
+        'MODIFY emoji VARCHAR(32) CHARACTER SET utf8mb4 '
+        'COLLATE utf8mb4_unicode_ci NOT NULL'
+    )
+
+
 class Migration(migrations.Migration):
     dependencies = [('warranty', '0012_greenworksdrawing')]
 
@@ -39,5 +49,6 @@ class Migration(migrations.Migration):
                 'ordering': ('status',),
             },
         ),
+        migrations.RunPython(use_utf8mb4_for_emoji, migrations.RunPython.noop),
         migrations.RunPython(seed_status_icons, migrations.RunPython.noop),
     ]
