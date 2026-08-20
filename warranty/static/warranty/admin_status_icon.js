@@ -64,14 +64,48 @@
             search.dispatchEvent(new Event('input'));
         }
 
+        function positionPanel() {
+            if (panel.hidden) return;
+
+            const margin = 8;
+            const gap = 6;
+            const triggerRect = trigger.getBoundingClientRect();
+            const panelWidth = Math.min(330, window.innerWidth - (margin * 2));
+            panel.style.width = panelWidth + 'px';
+            panel.style.left = Math.max(
+                margin,
+                Math.min(triggerRect.left, window.innerWidth - panelWidth - margin),
+            ) + 'px';
+
+            const panelHeight = panel.offsetHeight;
+            const roomBelow = window.innerHeight - triggerRect.bottom - gap - margin;
+            const roomAbove = triggerRect.top - gap - margin;
+            const openAbove = roomBelow < Math.min(panelHeight, 260)
+                && roomAbove > roomBelow;
+            const desiredTop = openAbove
+                ? triggerRect.top - gap - panelHeight
+                : triggerRect.bottom + gap;
+            panel.style.top = Math.max(
+                margin,
+                Math.min(desiredTop, window.innerHeight - panelHeight - margin),
+            ) + 'px';
+        }
+
         trigger.addEventListener('click', function () {
             const opening = panel.hidden;
             document.querySelectorAll('.telegram-emoji-search-panel:not([hidden])').forEach(
-                function (otherPanel) { otherPanel.hidden = true; }
+                function (otherPanel) {
+                    otherPanel.hidden = true;
+                    const otherTrigger = otherPanel.previousElementSibling;
+                    if (otherTrigger) otherTrigger.setAttribute('aria-expanded', 'false');
+                }
             );
             panel.hidden = !opening;
             trigger.setAttribute('aria-expanded', String(opening));
-            if (opening) search.focus();
+            if (opening) {
+                positionPanel();
+                search.focus();
+            }
         });
 
         search.addEventListener('input', function () {
@@ -85,7 +119,11 @@
                 if (matches) visible += 1;
             });
             empty.hidden = visible !== 0;
+            positionPanel();
         });
+
+        window.addEventListener('resize', positionPanel);
+        window.addEventListener('scroll', positionPanel, true);
 
         panel.append(search, grid, empty);
         picker.append(trigger, panel);
