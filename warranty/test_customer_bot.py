@@ -49,6 +49,13 @@ def test_label_confirmation_contains_product_link_serial_and_receipt_request():
     assert 'фото чека' in text
 
 
+def test_label_confirmation_uses_catalog_search_when_exact_card_is_missing():
+    session = WarrantyCustomerSession(
+        article='GW 123', serial_number='SN-456', raw_ocr_data={'label': {}},
+    )
+    assert 'https://pinel.ru/search/?q=GW+123' in _label_confirmation(session)
+
+
 def test_ocr_text_fields_are_extracted():
     label = _extract_ocr_fields('Артикул: GD40LM46SP Серийный номер: GW-2026-9911', 'label')
     receipt = _extract_ocr_fields('КАССОВЫЙ ЧЕК 20.08.2026 14:31', 'receipt')

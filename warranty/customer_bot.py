@@ -543,6 +543,8 @@ def _label_confirmation(session):
     product = label_data.get('product') or {}
     name = str(product.get('name') or session.article or 'Товар').strip()
     url = str(product.get('url') or '').strip()
+    if not url and session.article:
+        url = 'https://pinel.ru/search/?' + parse.urlencode({'q': session.article})
     product_line = f'Товар: {name}'
     if url:
         product_line += f'\nСсылка: {url}'
