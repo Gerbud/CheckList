@@ -14,7 +14,7 @@ from warranty.admin import WarrantyTelegramSettingsAdmin, WarrantyTelegramStatus
 from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
-from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, refresh_claim_buttons_for_statuses, update_claim_topic_message
+from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
 from warranty.greenworks import base_article, drawing_links_for_claim, parse_catalog_page
 import warranty.telegram as warranty_telegram
 
@@ -795,6 +795,78 @@ def test_topic_sync_uses_status_custom_emoji(monkeypatch):
         'message_thread_id': 460,
         'icon_custom_emoji_id': 'ready-icon',
     })
+
+
+@pytest.mark.django_db
+def test_configured_status_emoji_is_used_for_topic_icon(monkeypatch):
+    from warranty.models import WarrantyTelegramStatusIcon
+
+    WarrantyTelegramStatusIcon.objects.update_or_create(
+        status=WarrantyClaim.Status.READY,
+        defaults={'emoji': '🎉'},
+    )
+    claim = WarrantyClaim.objects.create(
+        external_id=871, status=WarrantyClaim.Status.READY,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4601',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    calls = []
+
+    def fake_send(method, payload, **kwargs):
+        calls.append((method, payload))
+        if method == 'getForumTopicIconStickers':
+            return SimpleNamespace(data={'result': [
+                {'emoji': '🎉', 'custom_emoji_id': 'party-icon'},
+            ]})
+        return SimpleNamespace(data={'result': True})
+
+    warranty_telegram._forum_topic_icons.cache_clear()
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'send_telegram_request', fake_send)
+
+    result = refresh_claim_topic_icons_for_statuses([WarrantyClaim.Status.READY])
+
+    assert result == {
+        'updated': 1, 'skipped': 0, 'failed': 0, 'rate_limited': 0,
+    }
+    assert calls[-1] == ('editForumTopic', {
+        'chat_id': '-100123',
+        'message_thread_id': 4601,
+        'icon_custom_emoji_id': 'party-icon',
+    })
+
+
+@pytest.mark.django_db
+def test_status_icon_refresh_updates_only_claims_in_selected_status(monkeypatch):
+    selected = WarrantyClaim.objects.create(
+        external_id=872, status=WarrantyClaim.Status.NEW,
+    )
+    other = WarrantyClaim.objects.create(
+        external_id=873, status=WarrantyClaim.Status.CLOSED,
+    )
+    selected_thread = WarrantyTelegramThread.objects.create(
+        claim=selected, chat_id='-100123', topic_id='4602',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    WarrantyTelegramThread.objects.create(
+        claim=other, chat_id='-100123', topic_id='4603',
+        state=WarrantyTelegramThread.State.ARCHIVED,
+    )
+    refreshed = []
+    monkeypatch.setattr(
+        warranty_telegram, 'update_claim_topic_icon',
+        lambda thread: refreshed.append(thread.pk),
+    )
+
+    result = refresh_claim_topic_icons_for_statuses([WarrantyClaim.Status.NEW])
+
+    assert result['updated'] == 1
+    assert refreshed == [selected_thread.pk]
 
 
 @pytest.mark.django_db

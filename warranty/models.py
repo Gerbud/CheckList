@@ -152,6 +152,30 @@ class WarrantyTelegramStatusButton(models.Model):
         return f'{self.get_source_status_display()}: {self.label} → {self.get_target_status_display()}'
 
 
+class WarrantyTelegramStatusIcon(models.Model):
+    status = models.CharField(
+        'статус', max_length=32, choices=WarrantyClaim.Status.choices, unique=True,
+    )
+    emoji = models.CharField(
+        'смайлик', max_length=32,
+        help_text='Смайлик должен быть доступен среди иконок тем Telegram.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'иконка Telegram для статуса гарантии'
+        verbose_name_plural = 'иконки Telegram для статусов гарантии'
+        ordering = ('status',)
+
+    def clean(self):
+        self.emoji = self.emoji.strip()
+        if not self.emoji:
+            raise ValidationError({'emoji': 'Укажите смайлик.'})
+
+    def __str__(self):
+        return f'{self.get_status_display()}: {self.emoji}'
+
+
 class WarrantyAttachment(models.Model):
     claim = models.ForeignKey(WarrantyClaim, on_delete=models.CASCADE, related_name='attachments')
     external_file_id = models.CharField('ID файла в источнике', max_length=64)

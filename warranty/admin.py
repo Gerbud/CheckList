@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html, format_html_join
 
-from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread, WarrantyWorkItem
+from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
 
 for model in (WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramThread, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
     admin.site.register(model)
@@ -84,6 +84,26 @@ class WarrantyTelegramStatusButtonAdmin(admin.ModelAdmin):
         self.message_user(
             request,
             'Кнопки Telegram обновлены: {updated}; пропущено: {skipped}; '
+            'rate limit: {rate_limited}; ошибок: {failed}.'.format(**results),
+            level=messages.WARNING if results['failed'] or results['rate_limited'] else messages.SUCCESS,
+        )
+
+
+@admin.register(WarrantyTelegramStatusIcon)
+class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
+    list_display = ('status', 'emoji', 'updated_at')
+    list_editable = ('emoji',)
+    ordering = ('status',)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+
+        from warranty.telegram import refresh_claim_topic_icons_for_statuses
+
+        results = refresh_claim_topic_icons_for_statuses([obj.status])
+        self.message_user(
+            request,
+            'Иконки Telegram обновлены: {updated}; пропущено: {skipped}; '
             'rate limit: {rate_limited}; ошибок: {failed}.'.format(**results),
             level=messages.WARNING if results['failed'] or results['rate_limited'] else messages.SUCCESS,
         )

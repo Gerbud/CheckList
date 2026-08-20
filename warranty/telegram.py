@@ -13,10 +13,10 @@ from django.utils import timezone
 from checklists.models import TelegramSystemSettings
 from checklists.telegram_client import OFFICIAL_API_BASE_URL, TelegramAPIError, send_telegram_request
 from warranty.greenworks import drawing_links_for_claim, product_article
-from warranty.models import WarrantyAttachment, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
+from warranty.models import WarrantyAttachment, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
 
 
-TOPIC_STATUS_EMOJI = {
+DEFAULT_TOPIC_STATUS_EMOJI = {
     'new': '🆕',
     'service_decision': '❓',
     'in_progress': '🛠',
@@ -57,12 +57,18 @@ def _topic_icon_id(status):
     icons = _forum_topic_icons()
     if not icons:
         raise TelegramAPIError('Telegram не вернул доступные иконки тем.')
-    desired = TOPIC_STATUS_EMOJI.get(status, TOPIC_STATUS_EMOJI['new'])
+    desired = WarrantyTelegramStatusIcon.objects.filter(
+        status=status,
+    ).values_list('emoji', flat=True).first()
+    desired = desired or DEFAULT_TOPIC_STATUS_EMOJI.get(
+        status, DEFAULT_TOPIC_STATUS_EMOJI['new'],
+    )
     exact = next((icon_id for emoji, icon_id in icons if emoji == desired), '')
     if exact:
         return exact
-    statuses = tuple(TOPIC_STATUS_EMOJI)
-    return icons[statuses.index(status) % len(icons)][1]
+    statuses = tuple(DEFAULT_TOPIC_STATUS_EMOJI)
+    position = statuses.index(status) if status in statuses else 0
+    return icons[position % len(icons)][1]
 
 
 def update_claim_topic_icon(thread, *, bot=None):
@@ -714,6 +720,33 @@ def refresh_claim_buttons_for_statuses(statuses):
                     results['updated'] += 1
                 else:
                     results['skipped'] += 1
+                break
+            except TelegramAPIError as exc:
+                if exc.status_code == 429:
+                    results['rate_limited'] += 1
+                    return results
+                if exc.retryable and attempt == 0:
+                    continue
+                results['failed'] += 1
+                break
+            except (TypeError, ValueError):
+                results['failed'] += 1
+                break
+    return results
+
+
+def refresh_claim_topic_icons_for_statuses(statuses):
+    """Update topic icons for every existing claim in selected statuses."""
+    results = {'updated': 0, 'skipped': 0, 'failed': 0, 'rate_limited': 0}
+    threads = WarrantyTelegramThread.objects.select_related('claim').filter(
+        claim__status__in=set(statuses),
+        topic_id__gt='',
+    ).order_by('id')
+    for thread in threads:
+        for attempt in range(2):
+            try:
+                update_claim_topic_icon(thread)
+                results['updated'] += 1
                 break
             except TelegramAPIError as exc:
                 if exc.status_code == 429:
