@@ -22,6 +22,7 @@ GET_METHODS = {
     'getUpdates',
     'getWebhookInfo',
     'getFile',
+    'getForumTopicIconStickers',
 }
 SUPPORTED_METHODS = {
     'sendMessage',
@@ -42,6 +43,7 @@ SUPPORTED_METHODS = {
     'editForumTopic',
     'deleteForumTopic',
     'getFile',
+    'getForumTopicIconStickers',
 }
 
 

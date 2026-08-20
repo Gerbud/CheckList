@@ -234,6 +234,7 @@ class WarrantyTelegramThread(models.Model):
         CLOSE_PENDING = 'close_pending', 'Ожидает закрытия'
         ARCHIVED = 'archived', 'Архивирована'
         RESTORE_PENDING = 'restore_pending', 'Ожидает восстановления'
+        STATUS_UPDATE_PENDING = 'status_update_pending', 'Ожидает обновления статуса'
         ERROR = 'error', 'Ошибка'
 
     claim = models.OneToOneField(WarrantyClaim, on_delete=models.CASCADE, related_name='telegram_thread')

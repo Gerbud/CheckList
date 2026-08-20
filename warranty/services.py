@@ -44,6 +44,8 @@ def _record_status_change(claim, old_status, actor_name):
     elif old_status == WarrantyClaim.Status.CLOSED:
         thread.state = WarrantyTelegramThread.State.RESTORE_PENDING
         thread.archived_at = None
+    elif thread.topic_id:
+        thread.state = WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
     thread.save()
 
 

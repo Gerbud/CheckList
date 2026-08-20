@@ -1,6 +1,7 @@
 import html
 import hashlib
 import re
+from functools import lru_cache
 from pathlib import Path
 from urllib import error, request
 
@@ -12,6 +13,63 @@ from django.utils import timezone
 from checklists.models import TelegramSystemSettings
 from checklists.telegram_client import OFFICIAL_API_BASE_URL, TelegramAPIError, send_telegram_request
 from warranty.models import WarrantyAttachment, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
+
+
+TOPIC_STATUS_EMOJI = {
+    'new': '🆕',
+    'service_decision': '❓',
+    'in_progress': '🛠',
+    'customer_wait': '👤',
+    'diagnostics': '🔍',
+    'parts_wait': '📦',
+    'ready': '✅',
+    'closed': '🔒',
+}
+
+
+@lru_cache(maxsize=1)
+def _forum_topic_icons():
+    _, bot = _config()
+    response = send_telegram_request(
+        'getForumTopicIconStickers', {}, system_settings=bot, quick=True,
+    )
+    stickers = response.data.get('result') or []
+    return tuple(
+        (str(item.get('emoji') or ''), str(item.get('custom_emoji_id') or ''))
+        for item in stickers
+        if isinstance(item, dict) and item.get('custom_emoji_id')
+    )
+
+
+def _topic_icon_id(status):
+    icons = _forum_topic_icons()
+    if not icons:
+        raise TelegramAPIError('Telegram не вернул доступные иконки тем.')
+    desired = TOPIC_STATUS_EMOJI.get(status, TOPIC_STATUS_EMOJI['new'])
+    exact = next((icon_id for emoji, icon_id in icons if emoji == desired), '')
+    if exact:
+        return exact
+    statuses = tuple(TOPIC_STATUS_EMOJI)
+    return icons[statuses.index(status) % len(icons)][1]
+
+
+def update_claim_topic_icon(thread, *, bot=None):
+    if not thread.topic_id:
+        return thread
+    warranty, configured_bot = _config()
+    bot = bot or configured_bot
+    send_telegram_request(
+        'editForumTopic',
+        {
+            'chat_id': warranty.chat_id,
+            'message_thread_id': int(thread.topic_id),
+            'icon_custom_emoji_id': _topic_icon_id(thread.claim.status),
+        },
+        system_settings=bot,
+        quick=True,
+        retry_on_failure=False,
+    )
+    return thread
 
 
 def _config():
@@ -97,7 +155,11 @@ def create_claim_topic(thread):
     warranty, bot = _config()
     response = send_telegram_request(
         'createForumTopic',
-        {'chat_id': warranty.chat_id, 'name': thread.title[:128]},
+        {
+            'chat_id': warranty.chat_id,
+            'name': thread.title[:128],
+            'icon_custom_emoji_id': _topic_icon_id(thread.claim.status),
+        },
         system_settings=bot,
         incoming=True,
         retry_on_failure=False,
@@ -351,6 +413,7 @@ def _handle_status_callback(callback, callback_data):
 
 def close_claim_topic(thread):
     warranty, bot = _config()
+    update_claim_topic_icon(thread, bot=bot)
     send_telegram_request('closeForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot, quick=True)
     thread.state = WarrantyTelegramThread.State.ARCHIVED
     thread.archived_at = timezone.now()
@@ -362,6 +425,7 @@ def close_claim_topic(thread):
 def reopen_claim_topic(thread):
     warranty, bot = _config()
     send_telegram_request('reopenForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot, quick=True)
+    update_claim_topic_icon(thread, bot=bot)
     thread.state = WarrantyTelegramThread.State.ACTIVE
     thread.archived_at = None
     thread.last_error = ''
@@ -370,9 +434,9 @@ def reopen_claim_topic(thread):
 
 
 def sync_warranty_topics(limit=50):
-    results = {'created': 0, 'closed': 0, 'reopened': 0, 'failed': 0, 'rate_limited': 0}
+    results = {'created': 0, 'closed': 0, 'reopened': 0, 'updated': 0, 'failed': 0, 'rate_limited': 0}
     query = WarrantyTelegramThread.objects.select_related('claim').filter(
-        state__in=(WarrantyTelegramThread.State.PLANNED, WarrantyTelegramThread.State.CLOSE_PENDING, WarrantyTelegramThread.State.RESTORE_PENDING)
+        state__in=(WarrantyTelegramThread.State.PLANNED, WarrantyTelegramThread.State.CLOSE_PENDING, WarrantyTelegramThread.State.RESTORE_PENDING, WarrantyTelegramThread.State.STATUS_UPDATE_PENDING)
     ).order_by('id')[:limit]
     for thread in query:
         original_state = thread.state
@@ -392,9 +456,15 @@ def sync_warranty_topics(limit=50):
             elif thread.state == WarrantyTelegramThread.State.CLOSE_PENDING:
                 close_claim_topic(thread)
                 results['closed'] += 1
-            else:
+            elif thread.state == WarrantyTelegramThread.State.RESTORE_PENDING:
                 reopen_claim_topic(thread)
                 results['reopened'] += 1
+            else:
+                update_claim_topic_icon(thread)
+                thread.state = WarrantyTelegramThread.State.ACTIVE
+                thread.last_error = ''
+                thread.save(update_fields=('state', 'last_error', 'updated_at'))
+                results['updated'] += 1
         except TelegramAPIError as exc:
             if exc.status_code == 429:
                 thread.last_error = str(exc)

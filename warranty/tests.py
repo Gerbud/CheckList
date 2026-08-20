@@ -269,3 +269,62 @@ def test_warranty_status_callback_closes_claim_and_queues_bitrix(monkeypatch):
     assert [method for method, payload in calls] == [
         'answerCallbackQuery', 'editMessageText', 'sendMessage',
     ]
+
+
+@pytest.mark.django_db
+def test_status_change_queues_topic_icon_update():
+    actor = User.objects.create_user('icon-admin')
+    claim = WarrantyClaim.objects.create(external_id=86, status=WarrantyClaim.Status.NEW)
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='459',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    form = WarrantyClaimUpdateForm({
+        'status': WarrantyClaim.Status.DIAGNOSTICS,
+        'priority': WarrantyClaim.Priority.NORMAL,
+        'comment': '',
+    }, instance=claim)
+    assert form.is_valid(), form.errors
+
+    update_claim(claim=claim, form=form, actor=actor)
+
+    thread.refresh_from_db()
+    assert thread.state == WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
+
+
+@pytest.mark.django_db
+def test_topic_sync_uses_status_custom_emoji(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=87, status=WarrantyClaim.Status.READY,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='460',
+        state=WarrantyTelegramThread.State.STATUS_UPDATE_PENDING,
+    )
+    calls = []
+
+    def fake_send(method, payload, **kwargs):
+        calls.append((method, payload))
+        if method == 'getForumTopicIconStickers':
+            return SimpleNamespace(data={'result': [
+                {'emoji': '✅', 'custom_emoji_id': 'ready-icon'},
+            ]})
+        return SimpleNamespace(data={'result': True})
+
+    warranty_telegram._forum_topic_icons.cache_clear()
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'send_telegram_request', fake_send)
+
+    result = warranty_telegram.sync_warranty_topics()
+
+    thread.refresh_from_db()
+    assert result['updated'] == 1
+    assert thread.state == WarrantyTelegramThread.State.ACTIVE
+    assert calls[-1] == ('editForumTopic', {
+        'chat_id': '-100123',
+        'message_thread_id': 460,
+        'icon_custom_emoji_id': 'ready-icon',
+    })
