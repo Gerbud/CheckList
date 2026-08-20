@@ -227,7 +227,7 @@ def test_missing_site_information_is_escalated_without_search_link(monkeypatch):
     assert 'consultation:support' in str(sent[-1][1]['reply_markup'])
 
 
-def test_support_button_invites_customer_to_write_here(monkeypatch):
+def test_support_button_confirms_that_ai_history_was_forwarded(monkeypatch):
     config = WarrantyCustomerBotSettings.get_solo()
     sent = []
     monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
@@ -238,7 +238,9 @@ def test_support_button_invites_customer_to_write_here(monkeypatch):
     })
     session = WarrantyCustomerSession.objects.get(telegram_user_id='700')
     assert session.step == session.Step.MENU
-    assert 'прямо в этот чат' in sent[-1]
+    assert 'историю вашей переписки специалисту' in sent[-1]
+    assert 'как можно скорее' in sent[-1]
+    assert 'Напишите ваш вопрос' not in sent[-1]
 
 
 def test_support_group_id_accepts_number_without_bot_api_prefix():
