@@ -5,8 +5,8 @@ from django.utils import timezone
 
 
 class WarrantyTelegramSettings(models.Model):
-    peer_id = models.CharField('Telegram peer ID', max_length=64, blank=True)
-    chat_id = models.CharField('Bot API chat ID', max_length=64, blank=True)
+    peer_id = models.CharField('ID Telegram-группы', max_length=64, blank=True)
+    chat_id = models.CharField('ID чата для Telegram Bot API', max_length=64, blank=True)
     use_forum_topics = models.BooleanField('отдельная тема на обращение', default=True)
     is_enabled = models.BooleanField('интеграция включена', default=False)
     updated_at = models.DateTimeField(auto_now=True)
