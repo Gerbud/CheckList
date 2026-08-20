@@ -233,6 +233,47 @@ def test_existing_topic_update_edits_only_recorded_intro(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_legacy_topic_gets_one_repair_type_note(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=93,
+        warranty_type=WarrantyClaim.WarrantyType.NON_WARRANTY,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='501',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    WarrantyTelegramMessage.objects.create(
+        thread=thread, telegram_message_id='1002', direction='outbound',
+        sender_name='Telegram bot', text='Старый текст',
+    )
+    calls = []
+
+    def fake_send(method, payload, **kwargs):
+        calls.append((method, payload))
+        if method == 'editMessageText':
+            raise warranty_telegram.TelegramAPIError(
+                'Bad Request: message to edit not found',
+                status_code=400, retryable=False,
+            )
+        return SimpleNamespace(data={'result': {
+            'message_id': 2000, 'message_thread_id': 501,
+        }})
+
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'send_telegram_request', fake_send)
+
+    assert update_claim_topic_message(thread) is True
+
+    note = thread.messages.get(sender_name='Telegram bot: repair type')
+    assert note.telegram_message_id == '2000'
+    assert 'Не по гарантии' in note.text
+    assert [method for method, _ in calls] == ['editMessageText', 'sendMessage']
+
+
+@pytest.mark.django_db
 def test_warranty_topic_message_is_recorded_by_ids():
     claim = WarrantyClaim.objects.create(external_id=82)
     thread = WarrantyTelegramThread.objects.create(
