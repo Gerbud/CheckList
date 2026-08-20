@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.html import format_html, format_html_join
 
 from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread, WarrantyWorkItem
@@ -67,3 +67,23 @@ class WarrantyTelegramStatusButtonAdmin(admin.ModelAdmin):
     list_filter = ('source_status', 'target_status', 'is_enabled')
     search_fields = ('label',)
     ordering = ('source_status', 'position', 'id')
+
+    def save_model(self, request, obj, form, change):
+        old_source_status = None
+        if change:
+            old_source_status = type(obj).objects.filter(pk=obj.pk).values_list(
+                'source_status', flat=True,
+            ).first()
+        super().save_model(request, obj, form, change)
+
+        from warranty.telegram import refresh_claim_buttons_for_statuses
+
+        results = refresh_claim_buttons_for_statuses(
+            status for status in (old_source_status, obj.source_status) if status
+        )
+        self.message_user(
+            request,
+            'Кнопки Telegram обновлены: {updated}; пропущено: {skipped}; '
+            'rate limit: {rate_limited}; ошибок: {failed}.'.format(**results),
+            level=messages.WARNING if results['failed'] or results['rate_limited'] else messages.SUCCESS,
+        )

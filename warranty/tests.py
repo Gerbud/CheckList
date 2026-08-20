@@ -10,11 +10,11 @@ from django.urls import reverse
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.admin import WarrantyTelegramSettingsAdmin
+from warranty.admin import WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin
 from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
-from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, update_claim_topic_message
+from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, refresh_claim_buttons_for_statuses, update_claim_topic_message
 from warranty.greenworks import base_article, drawing_links_for_claim, parse_catalog_page
 import warranty.telegram as warranty_telegram
 
@@ -307,6 +307,96 @@ def test_existing_topic_update_edits_only_recorded_intro(monkeypatch):
     assert calls[0][1]['message_id'] == 1000
     assert '<b>Тип ремонта:</b> Не по гарантии' in intro.text
     assert thread.messages.get(telegram_message_id='1001').text == 'Обсуждение'
+
+
+@pytest.mark.django_db
+def test_forced_topic_update_refreshes_keyboard_when_text_is_unchanged(monkeypatch):
+    claim = WarrantyClaim.objects.create(external_id=920, status=WarrantyClaim.Status.NEW)
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='510',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    intro = WarrantyTelegramMessage.objects.create(
+        thread=thread, telegram_message_id='511', direction='outbound',
+        sender_name='Telegram bot', text=_claim_message(claim),
+        payload={'message_thread_id': 510},
+    )
+    button = WarrantyTelegramStatusButton.objects.create(
+        source_status=WarrantyClaim.Status.NEW,
+        target_status=WarrantyClaim.Status.IN_PROGRESS,
+        label='В работу',
+    )
+    calls = []
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda method, payload, **kwargs: calls.append((method, payload)),
+    )
+
+    assert update_claim_topic_message(thread, force=True) is True
+
+    assert calls[0][0] == 'editMessageText'
+    assert calls[0][1]['reply_markup']['inline_keyboard'][0][0] == {
+        'text': 'В работу',
+        'callback_data': f'warranty:{claim.pk}:{button.pk}',
+    }
+    intro.refresh_from_db()
+    assert intro.edited_at is None
+
+
+@pytest.mark.django_db
+def test_button_refresh_updates_only_claims_in_selected_statuses(monkeypatch):
+    selected = WarrantyClaim.objects.create(external_id=921, status=WarrantyClaim.Status.NEW)
+    other = WarrantyClaim.objects.create(external_id=922, status=WarrantyClaim.Status.CLOSED)
+    selected_thread = WarrantyTelegramThread.objects.create(
+        claim=selected, topic_id='520', state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    WarrantyTelegramThread.objects.create(
+        claim=other, topic_id='530', state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    updated = []
+    monkeypatch.setattr(
+        warranty_telegram, 'update_claim_topic_message',
+        lambda thread, **kwargs: updated.append((thread.pk, kwargs)) or True,
+    )
+
+    result = refresh_claim_buttons_for_statuses([WarrantyClaim.Status.NEW])
+
+    assert result == {'updated': 1, 'skipped': 0, 'failed': 0, 'rate_limited': 0}
+    assert updated == [(selected_thread.pk, {'force': True})]
+
+
+@pytest.mark.django_db
+def test_status_button_admin_refreshes_old_and_new_source_status(monkeypatch):
+    button = WarrantyTelegramStatusButton.objects.create(
+        source_status=WarrantyClaim.Status.NEW,
+        target_status=WarrantyClaim.Status.IN_PROGRESS,
+        label='В работу',
+    )
+    button.source_status = WarrantyClaim.Status.DIAGNOSTICS
+    refreshed = []
+    notices = []
+    monkeypatch.setattr(
+        warranty_telegram, 'refresh_claim_buttons_for_statuses',
+        lambda statuses: refreshed.append(set(statuses)) or {
+            'updated': 2, 'skipped': 0, 'failed': 0, 'rate_limited': 0,
+        },
+    )
+    model_admin = WarrantyTelegramStatusButtonAdmin(
+        WarrantyTelegramStatusButton, AdminSite(),
+    )
+    monkeypatch.setattr(
+        model_admin, 'message_user',
+        lambda request, message, **kwargs: notices.append((message, kwargs)),
+    )
+
+    model_admin.save_model(SimpleNamespace(), button, form=None, change=True)
+
+    assert refreshed == [{WarrantyClaim.Status.NEW, WarrantyClaim.Status.DIAGNOSTICS}]
+    assert 'Кнопки Telegram обновлены: 2' in notices[0][0]
 
 
 @pytest.mark.django_db

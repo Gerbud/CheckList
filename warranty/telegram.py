@@ -198,7 +198,7 @@ def _claim_intro_message(thread):
     return None
 
 
-def update_claim_topic_message(thread, *, bot=None):
+def update_claim_topic_message(thread, *, bot=None, force=False):
     """Edit only the recorded bot introduction; never replace topic discussion."""
     intro = _claim_intro_message(thread)
     if not intro:
@@ -206,7 +206,7 @@ def update_claim_topic_message(thread, *, bot=None):
     warranty, configured_bot = _config()
     bot = bot or configured_bot
     text = _claim_message(thread.claim)
-    if intro.text == text:
+    if intro.text == text and not force:
         return True
     try:
         send_telegram_request(
@@ -685,6 +685,31 @@ def refresh_existing_claim_messages(limit=200):
     for thread in threads:
         try:
             if update_claim_topic_message(thread):
+                results['updated'] += 1
+            else:
+                results['skipped'] += 1
+        except TelegramAPIError as exc:
+            if exc.status_code == 429:
+                results['rate_limited'] += 1
+                break
+            results['failed'] += 1
+            if exc.retryable:
+                break
+        except (TypeError, ValueError):
+            results['failed'] += 1
+    return results
+
+
+def refresh_claim_buttons_for_statuses(statuses):
+    """Refresh inline keyboards for every existing topic in selected statuses."""
+    results = {'updated': 0, 'skipped': 0, 'failed': 0, 'rate_limited': 0}
+    threads = WarrantyTelegramThread.objects.select_related('claim').filter(
+        claim__status__in=set(statuses),
+        topic_id__gt='',
+    ).order_by('id')
+    for thread in threads:
+        try:
+            if update_claim_topic_message(thread, force=True):
                 results['updated'] += 1
             else:
                 results['skipped'] += 1
