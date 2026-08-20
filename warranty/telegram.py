@@ -565,6 +565,7 @@ def _handle_status_callback(callback, callback_data):
 def close_claim_topic(thread):
     warranty, bot = _config()
     update_claim_topic_icon(thread, bot=bot)
+    update_claim_topic_message(thread, bot=bot)
     send_telegram_request('closeForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot, quick=True)
     thread.state = WarrantyTelegramThread.State.ARCHIVED
     thread.archived_at = timezone.now()
@@ -577,6 +578,7 @@ def reopen_claim_topic(thread):
     warranty, bot = _config()
     send_telegram_request('reopenForumTopic', {'chat_id': warranty.chat_id, 'message_thread_id': int(thread.topic_id)}, system_settings=bot, quick=True)
     update_claim_topic_icon(thread, bot=bot)
+    update_claim_topic_message(thread, bot=bot)
     thread.state = WarrantyTelegramThread.State.ACTIVE
     thread.archived_at = None
     thread.last_error = ''

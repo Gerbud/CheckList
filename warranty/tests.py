@@ -855,6 +855,53 @@ def test_status_change_queues_topic_icon_update():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize('operation,initial_state,expected_state', [
+    ('close_claim_topic', WarrantyTelegramThread.State.CLOSE_PENDING, WarrantyTelegramThread.State.ARCHIVED),
+    ('reopen_claim_topic', WarrantyTelegramThread.State.RESTORE_PENDING, WarrantyTelegramThread.State.ACTIVE),
+])
+def test_close_and_reopen_refresh_intro_status_hashtag(
+    monkeypatch, operation, initial_state, expected_state,
+):
+    claim = WarrantyClaim.objects.create(
+        external_id=859,
+        status=(
+            WarrantyClaim.Status.CLOSED
+            if operation == 'close_claim_topic'
+            else WarrantyClaim.Status.IN_PROGRESS
+        ),
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4589', state=initial_state,
+    )
+    refreshed = []
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'update_claim_topic_icon', lambda thread, **kwargs: thread)
+    monkeypatch.setattr(
+        warranty_telegram, 'update_claim_topic_message',
+        lambda thread, **kwargs: refreshed.append(_claim_message(thread.claim)) or True,
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda method, payload, **kwargs: SimpleNamespace(data={'result': True}),
+    )
+
+    getattr(warranty_telegram, operation)(thread)
+
+    thread.refresh_from_db()
+    assert thread.state == expected_state
+    assert len(refreshed) == 1
+    expected_hashtag = (
+        '#статус_закрыт'
+        if operation == 'close_claim_topic'
+        else '#статус_в_работе'
+    )
+    assert expected_hashtag in refreshed[0]
+
+
+@pytest.mark.django_db
 def test_bitrix_status_change_notifies_topic_with_actor(monkeypatch):
     claim = WarrantyClaim.objects.create(
         external_id=860, source='bitrix', source_status='1',
