@@ -252,6 +252,17 @@ class WarrantyCustomerSupportMessage(models.Model):
         constraints = [models.UniqueConstraint(fields=('thread', 'direction', 'source_message_id'), name='unique_customer_support_message')]
 
 
+class WarrantyCustomerConsultationMessage(models.Model):
+    session = models.ForeignKey(WarrantyCustomerSession, on_delete=models.CASCADE, related_name='consultation_messages')
+    question = models.TextField()
+    answer = models.TextField()
+    customer_message_id = models.CharField(max_length=64, blank=True)
+    assistant_message_id = models.CharField(max_length=64, blank=True)
+    support_message_id = models.CharField(max_length=64, blank=True)
+    shared_with_support_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class WarrantyClaim(models.Model):
     class Status(models.TextChoices):
         NEW = 'new', 'Новый'

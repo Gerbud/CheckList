@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from checklists.price_tags import ProductImportError, find_pinel_product, format_product_price, import_product, search_pinel_products
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
+from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
 class OpenAIModelUnavailable(RuntimeError):
@@ -282,9 +282,10 @@ def _start_product_consultation(config, callback):
     session.save()
     _answer_callback(config, callback)
     if not config.product_consultation_enabled or not config.ocr_api_key:
-        _send(config, session, 'Консультант пока недоступен. Напишите специалисту поддержки.', reply_markup=_menu_keyboard())
-        session.step = session.Step.MENU
-        session.save(update_fields=('step', 'updated_at'))
+        _send(
+            config, session, 'Консультант пока недоступен. Можно передать вопрос специалисту.',
+            reply_markup=_consultation_keyboard(),
+        )
         return
     _send(
         config, session,
@@ -292,23 +293,44 @@ def _start_product_consultation(config, callback):
     )
 
 
-def _consult_about_product(config, session, question):
+def _consultation_keyboard():
+    return {'inline_keyboard': [[
+        {'text': 'Ответ помог 👍', 'callback_data': 'consultation:resolved'},
+        {'text': 'Не нашли ответ — техподдержка', 'callback_data': 'consultation:support'},
+    ]]}
+
+
+def _consult_about_product(config, session, question, customer_message_id=''):
     if not config.product_consultation_enabled or not config.ocr_api_key:
-        _send(config, session, 'Консультант временно недоступен. Выберите поддержку в меню /start.')
+        _send(
+            config, session, 'Консультант временно недоступен. Можно передать вопрос специалисту.',
+            reply_markup=_consultation_keyboard(),
+        )
         return
     try:
         products, search_url = _pinel_product_context(question)
         history = list(session.raw_ocr_data.get('consultation_history') or [])
         answer = _openai_product_answer(config, question, products, search_url, history)
     except (ProductImportError, error.URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError):
-        _send(config, session, 'Не удалось получить данные каталога. Попробуйте ещё раз или выберите поддержку в меню /start.')
+        _send(
+            config, session, 'Сейчас не удалось подготовить ответ. Можно повторить вопрос или передать диалог специалисту.',
+            reply_markup=_consultation_keyboard(),
+        )
         return
     history.extend(({'role': 'user', 'content': question[:2000]}, {'role': 'assistant', 'content': answer[:2000]}))
     raw_data = dict(session.raw_ocr_data)
     raw_data['consultation_history'] = history[-8:]
     session.raw_ocr_data = raw_data
     session.save(update_fields=('raw_ocr_data', 'updated_at'))
-    _send(config, session, answer, disable_web_page_preview=True)
+    sent = _send(
+        config, session, answer, disable_web_page_preview=True,
+        reply_markup=_consultation_keyboard(),
+    )
+    WarrantyCustomerConsultationMessage.objects.create(
+        session=session, question=question[:4000], answer=answer,
+        customer_message_id=str(customer_message_id or ''),
+        assistant_message_id=str((sent or {}).get('message_id') or '') if isinstance(sent, dict) else '',
+    )
 
 
 def _tesseract(config, content):
@@ -410,7 +432,6 @@ def _menu_keyboard():
         [{'text': '🌿 Подобрать товар Greenworks', 'callback_data': 'product:consultation'}],
         [{'text': '✅ Активировать электронную гарантию', 'callback_data': 'flow:registration'}],
         [{'text': '🛠 Оформить рекламацию', 'callback_data': 'flow:claim'}],
-        [{'text': '💬 Написать в поддержку', 'callback_data': 'support:start'}],
     ]}
 
 
@@ -424,8 +445,12 @@ def _start_support_chat(config, callback):
     session.chat_id = str((message.get('chat') or {}).get('id') or session.chat_id)
     session.username = str(sender.get('username') or '')[:255]
     session.step = session.Step.MENU
+    session.raw_ocr_data = {**session.raw_ocr_data, 'support_active': True}
     session.save()
     _answer_callback(config, callback)
+    thread = _support_thread(config, session)
+    if thread:
+        _share_consultation_with_support(config, session, thread)
     _send(
         config, session,
         'Напишите ваш вопрос прямо в этот чат — обычным сообщением, фото или документом. '
@@ -469,6 +494,28 @@ def _support_thread(config, session):
         thread.telegram_message_ids = [str(intro['message_id'])]
         thread.save(update_fields=('telegram_message_ids', 'updated_at'))
     return thread
+
+
+def _share_consultation_with_support(config, session, thread):
+    messages = session.consultation_messages.filter(shared_with_support_at__isnull=True).order_by('created_at')
+    for consultation in messages:
+        result = _telegram(config, 'sendMessage', {
+            'chat_id': thread.support_chat_id,
+            'message_thread_id': int(thread.message_thread_id),
+            'text': (
+                f'История консультации с ИИ\n\n'
+                f'Клиент: {consultation.question[:1500]}\n\n'
+                f'ИИ: {consultation.answer[:2400]}'
+            ),
+            'disable_web_page_preview': True,
+        })
+        message_id = str((result or {}).get('message_id') or '') if isinstance(result, dict) else ''
+        consultation.support_message_id = message_id
+        consultation.shared_with_support_at = timezone.now()
+        consultation.save(update_fields=('support_message_id', 'shared_with_support_at'))
+        if message_id and message_id not in thread.telegram_message_ids:
+            thread.telegram_message_ids.append(message_id)
+    thread.save(update_fields=('telegram_message_ids', 'updated_at'))
 
 
 def _route_to_support(config, session, message):
@@ -903,9 +950,11 @@ def _handle_message(config, message):
         except ValueError: _send(config, session, 'Введите дату в формате ДД.ММ.ГГГГ.'); return
         _show_next(config, session)
     elif session.step == session.Step.CONSULTATION and text:
-        _consult_about_product(config, session, text)
-    else:
+        _consult_about_product(config, session, text, message.get('message_id'))
+    elif session.raw_ocr_data.get('support_active'):
         _route_to_support(config, session, message)
+    else:
+        _send(config, session, 'Выберите нужное действие кнопкой или начните консультацию по Greenworks.', reply_markup=_menu_keyboard())
 
 
 def _create_claim(config, callback):
@@ -975,6 +1024,8 @@ def customer_bot_webhook(request):
             elif data == 'flow:claim': _start_flow(config, callback, WarrantyCustomerSession.Mode.CLAIM)
             elif data == 'product:consultation': _start_product_consultation(config, callback)
             elif data == 'support:start': _start_support_chat(config, callback)
+            elif data == 'consultation:support': _start_support_chat(config, callback)
+            elif data == 'consultation:resolved': _answer_callback(config, callback, 'Отлично! Можете задать следующий вопрос.')
             elif data == 'consent:accept': _accept_consent(config, callback)
             elif data == 'consent:decline': _decline_consent(config, callback)
             elif data == 'registration:labels:done': _finish_registration_labels(config, callback)

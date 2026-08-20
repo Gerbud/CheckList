@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
+from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
 pytestmark = pytest.mark.django_db
@@ -18,9 +18,9 @@ def test_phone_normalization():
     assert _phone('123') == ''
 
 
-def test_main_menu_has_support_button():
+def test_main_menu_does_not_offer_support_before_consultation():
     buttons = [button for row in _menu_keyboard()['inline_keyboard'] for button in row]
-    assert {'text': '💬 Написать в поддержку', 'callback_data': 'support:start'} in buttons
+    assert not any(button.get('callback_data') == 'support:start' for button in buttons)
 
 
 def test_main_menu_has_greenworks_consultation_button():
@@ -59,10 +59,55 @@ def test_consultation_message_is_answered_by_openai_not_support(monkeypatch):
         step=WarrantyCustomerSession.Step.CONSULTATION,
     )
     sent = []
-    monkeypatch.setattr('warranty.customer_bot._consult_about_product', lambda config, session, text: sent.append(text))
+    monkeypatch.setattr('warranty.customer_bot._consult_about_product', lambda config, session, text, message_id='': sent.append((text, message_id)))
     monkeypatch.setattr('warranty.customer_bot._route_to_support', lambda *args: pytest.fail('must not route to support'))
     _handle_message(config, {'message_id': 801, 'chat': {'id': 721}, 'from': {'id': 720}, 'text': 'Какой триммер выбрать?'})
-    assert sent == ['Какой триммер выбрать?']
+    assert sent == [('Какой триммер выбрать?', 801)]
+
+
+def test_ai_dialogue_is_saved_with_both_telegram_message_ids(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.ocr_api_key = 'openai-key'
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='730', chat_id='731', mode=WarrantyCustomerSession.Mode.CONSULTATION,
+        step=WarrantyCustomerSession.Step.CONSULTATION,
+    )
+    monkeypatch.setattr('warranty.customer_bot._pinel_product_context', lambda question: ([], 'https://pinel.ru/search/?q=test'))
+    monkeypatch.setattr('warranty.customer_bot._openai_product_answer', lambda *args: 'Полезный ответ https://pinel.ru/search/?q=test')
+    monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {'message_id': 902})
+    _consult_about_product(config, session, 'Вопрос клиента', 901)
+    saved = WarrantyCustomerConsultationMessage.objects.get(session=session)
+    assert saved.customer_message_id == '901'
+    assert saved.assistant_message_id == '902'
+    assert saved.question == 'Вопрос клиента'
+
+
+def test_ai_dialogue_is_shared_with_support_and_message_id_is_saved(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.support_group_id = '-100777'
+    session = WarrantyCustomerSession.objects.create(telegram_user_id='740', chat_id='741')
+    consultation = WarrantyCustomerConsultationMessage.objects.create(
+        session=session, question='Как заменить шпулю?', answer='Безопасная инструкция',
+        customer_message_id='910', assistant_message_id='911',
+    )
+    calls = []
+
+    def telegram(config, method, payload):
+        calls.append((method, payload))
+        if method == 'createForumTopic': return {'message_thread_id': 550}
+        return {'message_id': 920 + len(calls)}
+
+    monkeypatch.setattr('warranty.customer_bot._telegram', telegram)
+    monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {})
+    _start_support_chat(config, {
+        'id': 'support-after-ai', 'from': {'id': 740}, 'message': {'chat': {'id': 741}},
+    })
+    consultation.refresh_from_db()
+    thread = WarrantyCustomerSupportThread.objects.get(telegram_user_id='740')
+    assert consultation.support_message_id
+    assert consultation.shared_with_support_at is not None
+    assert consultation.support_message_id in thread.telegram_message_ids
+    assert any('Как заменить шпулю?' in call[1].get('text', '') for call in calls if call[0] == 'sendMessage')
 
 
 def test_product_answer_removes_external_links_and_adds_pinel_source(monkeypatch):
