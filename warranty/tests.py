@@ -112,7 +112,8 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
 
     message = _claim_message(claim)
 
-    assert 'Дрель &amp; шуруповёрт\n<a href="https://shop.example/catalog/sku/2178/">Открыть товар</a>' in message
+    assert '<a href="https://shop.example/catalog/sku/2178/">Дрель &amp; шуруповёрт</a>' in message
+    assert 'Открыть товар' not in message
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
     assert 'Иван &lt;Иванов&gt;' in message
 

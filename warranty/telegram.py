@@ -45,9 +45,9 @@ def _phone_href(phone):
 def _claim_message(claim):
     product_name = html.escape(claim.product_name or '—')
     product_url = _product_url(claim)
-    product_link = (
-        f'\n<a href="{html.escape(product_url, quote=True)}">Открыть товар</a>'
-        if product_url else ''
+    product = (
+        f'<a href="{html.escape(product_url, quote=True)}">{product_name}</a>'
+        if product_url else product_name
     )
     phone_text = html.escape(claim.phone or '—')
     phone_href = _phone_href(claim.phone)
@@ -57,7 +57,7 @@ def _claim_message(claim):
     )
     return (
         f'<b>Гарантийное обращение №{claim.external_id}</b>\n\n'
-        f'<b>Товар</b>\n{product_name}{product_link}\n\n'
+        f'<b>Товар</b>\n{product}\n\n'
         f'<b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
         f'<b>Телефон:</b> {phone}\n\n'
         f'<b>Неисправность</b>\n{html.escape(claim.defect or "—")}'
