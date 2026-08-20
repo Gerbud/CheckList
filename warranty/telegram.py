@@ -181,6 +181,8 @@ def update_claim_topic_message(thread, *, bot=None):
     warranty, configured_bot = _config()
     bot = bot or configured_bot
     text = _claim_message(thread.claim)
+    if intro.text == text:
+        return True
     try:
         send_telegram_request(
             'editMessageText',
@@ -197,9 +199,13 @@ def update_claim_topic_message(thread, *, bot=None):
             retry_on_failure=False,
         )
     except TelegramAPIError as exc:
-        if exc.status_code == 400 and 'MESSAGE_NOT_MODIFIED' in str(exc):
+        error_text = str(exc).lower()
+        if exc.status_code == 400 and (
+            'message_not_modified' in error_text
+            or 'message is not modified' in error_text
+        ):
             pass
-        elif exc.status_code == 400 and 'message to edit not found' in str(exc).lower():
+        elif exc.status_code == 400 and 'message to edit not found' in error_text:
             return update_claim_repair_type_note(thread, bot=bot)
         else:
             raise
@@ -220,6 +226,8 @@ def update_claim_repair_type_note(thread, *, bot=None):
     ).exclude(telegram_message_id='').order_by('id').first()
     text = f'🛠 <b>Тип ремонта:</b> {html.escape(thread.claim.get_warranty_type_display())}'
     if note:
+        if note.text == text:
+            return True
         try:
             send_telegram_request(
                 'editMessageText',
@@ -232,7 +240,11 @@ def update_claim_repair_type_note(thread, *, bot=None):
                 system_settings=bot, quick=True, retry_on_failure=False,
             )
         except TelegramAPIError as exc:
-            if exc.status_code != 400 or 'MESSAGE_NOT_MODIFIED' not in str(exc):
+            error_text = str(exc).lower()
+            if exc.status_code != 400 or not (
+                'message_not_modified' in error_text
+                or 'message is not modified' in error_text
+            ):
                 raise
         if note.text != text:
             note.text = text
