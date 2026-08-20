@@ -73,8 +73,8 @@ class WarrantyCustomerBotSettings(models.Model):
     webhook_registered_at = models.DateTimeField('webhook зарегистрирован', null=True, blank=True)
     webhook_last_error = models.TextField('ошибка webhook', blank=True)
     support_group_id = models.CharField(
-        'ID группы поддержки', max_length=64, blank=True,
-        help_text='ID отдельной Telegram supergroup с включёнными темами, например -1001234567890.',
+        'ID группы поддержки (без -100)', max_length=64, blank=True,
+        help_text='Можно вставить номер из Telegram без префикса, например 4462669970.',
     )
     personal_data_operator = models.CharField('оператор персональных данных', max_length=500, default='ИП Савченко Е.В.')
     personal_data_operator_address = models.CharField('адрес оператора', max_length=500, default='195176, г. Санкт-Петербург, ул. Апрельская, д. 5')
@@ -101,6 +101,17 @@ class WarrantyCustomerBotSettings(models.Model):
             raise ValidationError('Допустима только одна настройка.')
         self.pk = 1
         return super().save(*args, **kwargs)
+
+    @property
+    def support_api_chat_id(self):
+        value = str(self.support_group_id or '').strip()
+        if not value:
+            return ''
+        if value.startswith('-100'):
+            return value
+        if value.lstrip('-').isdigit():
+            return f'-100{value.lstrip("-")}'
+        return value
 
 class WarrantyCustomerSession(models.Model):
     class Mode(models.TextChoices):

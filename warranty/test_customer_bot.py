@@ -18,6 +18,13 @@ def test_phone_normalization():
     assert _phone('123') == ''
 
 
+def test_support_group_id_accepts_number_without_bot_api_prefix():
+    config = WarrantyCustomerBotSettings(support_group_id='4462669970')
+    assert config.support_api_chat_id == '-1004462669970'
+    config.support_group_id = '-1004462669970'
+    assert config.support_api_chat_id == '-1004462669970'
+
+
 def test_ocr_text_fields_are_extracted():
     label = _extract_ocr_fields('Артикул: GD40LM46SP Серийный номер: GW-2026-9911', 'label')
     receipt = _extract_ocr_fields('КАССОВЫЙ ЧЕК 20.08.2026 14:31', 'receipt')

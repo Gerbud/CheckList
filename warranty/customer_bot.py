@@ -269,15 +269,15 @@ def _support_thread(config, session):
     thread = WarrantyCustomerSupportThread.objects.filter(telegram_user_id=session.telegram_user_id).first()
     if thread:
         return thread
-    if not config.support_group_id:
+    if not config.support_api_chat_id:
         return None
     profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id).first()
     customer_name = (profile.full_name if profile else '') or session.username or f'ID {session.telegram_user_id}'
     title = f'Клиент · {customer_name}'[:128]
-    topic = _telegram(config, 'createForumTopic', {'chat_id': config.support_group_id, 'name': title})
+    topic = _telegram(config, 'createForumTopic', {'chat_id': config.support_api_chat_id, 'name': title})
     thread = WarrantyCustomerSupportThread.objects.create(
         telegram_user_id=session.telegram_user_id, customer_chat_id=session.chat_id,
-        support_chat_id=config.support_group_id, message_thread_id=str(topic['message_thread_id']),
+        support_chat_id=config.support_api_chat_id, message_thread_id=str(topic['message_thread_id']),
         username=session.username, customer_name=customer_name,
     )
     intro = _telegram(config, 'sendMessage', {
@@ -318,7 +318,7 @@ def _route_to_support(config, session, message):
 def _handle_support_reply(config, message):
     chat_id = str((message.get('chat') or {}).get('id') or '')
     topic_id = str(message.get('message_thread_id') or '')
-    if not config.support_group_id or chat_id != str(config.support_group_id):
+    if not config.support_api_chat_id or chat_id != config.support_api_chat_id:
         return False
     if not topic_id or any(key in message for key in ('forum_topic_created', 'forum_topic_closed', 'forum_topic_reopened', 'forum_topic_edited')):
         return True
