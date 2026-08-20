@@ -137,6 +137,28 @@ def test_status_icon_admin_form_offers_only_telegram_icons(monkeypatch):
     assert updated.custom_emoji_id == 'star-id'
 
 
+def test_status_icon_admin_changelist_has_visual_telegram_select(monkeypatch):
+    model_admin = WarrantyTelegramStatusIconAdmin(
+        WarrantyTelegramStatusIcon, AdminSite(),
+    )
+    monkeypatch.setattr(model_admin, 'telegram_icons', lambda: (
+        ('📰', 'newspaper-id'),
+        ('⭐', 'star-id'),
+    ))
+
+    field = model_admin.formfield_for_dbfield(
+        WarrantyTelegramStatusIcon._meta.get_field('custom_emoji_id'), None,
+    )
+
+    assert model_admin.list_editable == ('custom_emoji_id',)
+    assert list(field.choices) == [
+        ('', '—'),
+        ('newspaper-id', '📰'),
+        ('star-id', '⭐'),
+    ]
+    assert 'telegram-emoji-select' in field.widget.attrs['class']
+
+
 @pytest.mark.django_db
 def test_warranty_list_is_system_admin_only(client):
     ordinary = User.objects.create_user('ordinary', password='secret')
@@ -792,6 +814,9 @@ def test_bitrix_status_change_notifies_topic_with_actor(monkeypatch):
 
 @pytest.mark.django_db
 def test_topic_sync_uses_status_custom_emoji(monkeypatch):
+    WarrantyTelegramStatusIcon.objects.filter(
+        status=WarrantyClaim.Status.READY,
+    ).update(custom_emoji_id='')
     claim = WarrantyClaim.objects.create(
         external_id=87, status=WarrantyClaim.Status.READY,
     )

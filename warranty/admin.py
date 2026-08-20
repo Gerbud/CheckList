@@ -92,7 +92,8 @@ class WarrantyTelegramStatusButtonAdmin(admin.ModelAdmin):
 
 @admin.register(WarrantyTelegramStatusIcon)
 class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
-    list_display = ('status', 'emoji', 'updated_at')
+    list_display = ('status', 'emoji', 'custom_emoji_id', 'updated_at')
+    list_editable = ('custom_emoji_id',)
     ordering = ('status',)
     readonly_fields = ('status',)
 
@@ -149,6 +150,32 @@ class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
     class Media:
         css = {'all': ('warranty/admin_status_icon.css',)}
 
+    @staticmethod
+    def telegram_icons():
+        from checklists.telegram_client import TelegramAPIError
+        from warranty.telegram import _forum_topic_icons
+
+        try:
+            return _forum_topic_icons()
+        except TelegramAPIError:
+            return ()
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == 'custom_emoji_id':
+            choices = [('', '—')] + [
+                (icon_id, emoji) for emoji, icon_id in self.telegram_icons()
+            ]
+            return forms.ChoiceField(
+                label=db_field.verbose_name,
+                required=not db_field.blank,
+                choices=choices,
+                widget=forms.Select(attrs={
+                    'class': 'telegram-emoji-select',
+                    'title': 'Выберите иконку Telegram',
+                }),
+            )
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
     def has_add_permission(self, request):
         return False
 
@@ -156,6 +183,12 @@ class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
         return False
 
     def save_model(self, request, obj, form, change):
+        if obj.custom_emoji_id:
+            emoji_by_id = {
+                icon_id: emoji for emoji, icon_id in self.telegram_icons()
+            }
+            if obj.custom_emoji_id in emoji_by_id:
+                obj.emoji = emoji_by_id[obj.custom_emoji_id]
         super().save_model(request, obj, form, change)
 
         from warranty.telegram import refresh_claim_topic_icons_for_statuses
