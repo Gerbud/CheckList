@@ -1008,6 +1008,16 @@ def process_telegram_update(update, *, collect_actions=False):
             if collect_actions
             else 'duplicate'
         )
+    from warranty.telegram import record_warranty_update
+    if record_warranty_update(update):
+        log.processed = True
+        log.processed_at = timezone.now()
+        log.save(update_fields=('processed', 'processed_at'))
+        return (
+            TelegramProcessResult('ignored', processing_mode)
+            if collect_actions
+            else 'processed'
+        )
     if processing_mode == UpdateMode.IGNORED:
         log.processed = True
         log.processed_at = timezone.now()

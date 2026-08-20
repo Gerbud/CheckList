@@ -8,9 +8,9 @@ from django.urls import reverse
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramSettings, WarrantyTelegramThread
+from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramThread
 from warranty.services import update_claim
-from warranty.telegram import _claim_message
+from warranty.telegram import _claim_message, record_warranty_update
 
 
 @pytest.mark.django_db
@@ -113,3 +113,28 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     assert 'Дрель &amp; шуруповёрт\n<a href="https://shop.example/catalog/sku/2178/">Открыть товар</a>' in message
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
     assert 'Иван &lt;Иванов&gt;' in message
+
+
+@pytest.mark.django_db
+def test_warranty_topic_message_is_recorded_by_ids():
+    claim = WarrantyClaim.objects.create(external_id=82)
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim,
+        chat_id='-100123',
+        topic_id='456',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    update = {'message': {
+        'message_id': 789,
+        'message_thread_id': 456,
+        'date': 1787212800,
+        'chat': {'id': -100123},
+        'from': {'id': 10, 'first_name': 'Иван'},
+        'text': 'Принято в работу',
+    }}
+
+    assert record_warranty_update(update) is True
+    saved = WarrantyTelegramMessage.objects.get(thread=thread)
+    assert saved.telegram_message_id == '789'
+    assert saved.sender_external_id == '10'
+    assert saved.text == 'Принято в работу'

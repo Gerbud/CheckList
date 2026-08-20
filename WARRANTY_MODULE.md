@@ -61,6 +61,8 @@ python manage.py import_bitrix_warranty export.json --files-root /path/to/files
 
 Устанавливаемый модуль находится в `bitrix-module/pinel.warrantysync`. Он работает с существующими таблицами `warranty` и `warranty_log`, перед запуском проверяет обязательные поля и разрешает менять только `UF_STATUS` и `UF_COMMENT`.
 
+Модуль `pinel.warrantysync` установлен и включён на сервере Pinel 20.08.2026 в `/local/modules/pinel.warrantysync`. Архив сохранён рядом как `/local/modules/pinel.warrantysync.zip`. Общий HMAC-секрет настроен в параметрах Bitrix и локальном игнорируемом `.env`. Подписанная связь проверена из Django операциями `health` и `claims.list`; модуль версии 1.0.0 ответил успешно.
+
 ### Установка в Bitrix
 
 1. Скопировать каталог `bitrix-module/pinel.warrantysync` целиком в `/local/modules/pinel.warrantysync` на старом сайте.

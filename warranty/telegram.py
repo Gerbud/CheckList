@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from checklists.models import TelegramSystemSettings
 from checklists.telegram_client import TelegramAPIError, send_telegram_request
-from warranty.models import WarrantyTelegramSettings, WarrantyTelegramThread
+from warranty.models import WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramThread
 
 
 def _config():
@@ -81,7 +81,7 @@ def create_claim_topic(thread):
         locked.state = WarrantyTelegramThread.State.ACTIVE
         locked.last_error = ''
         locked.save()
-    send_telegram_request(
+    message_response = send_telegram_request(
         'sendMessage',
         {
             'chat_id': warranty.chat_id,
@@ -93,7 +93,53 @@ def create_claim_topic(thread):
         system_settings=bot,
         quick=True,
     )
+    message_result = message_response.data.get('result') or {}
+    message_id = message_result.get('message_id')
+    WarrantyTelegramMessage.objects.create(
+        thread=locked,
+        telegram_message_id=str(message_id or ''),
+        direction='outbound',
+        sender_name='Telegram bot',
+        text=_claim_message(thread.claim),
+        payload=message_result if isinstance(message_result, dict) else {},
+    )
     return locked
+
+
+def record_warranty_update(update):
+    message = update.get('message') or update.get('edited_message') or {}
+    chat_id = str((message.get('chat') or {}).get('id') or '')
+    topic_id = str(message.get('message_thread_id') or '')
+    message_id = str(message.get('message_id') or '')
+    if not chat_id or not topic_id or not message_id:
+        return False
+    thread = WarrantyTelegramThread.objects.filter(
+        chat_id=chat_id,
+        topic_id=topic_id,
+    ).first()
+    if not thread:
+        return False
+    sender = message.get('from') or {}
+    sender_name = ' '.join(filter(None, (
+        str(sender.get('first_name') or '').strip(),
+        str(sender.get('last_name') or '').strip(),
+    ))) or str(sender.get('username') or '')
+    WarrantyTelegramMessage.objects.update_or_create(
+        thread=thread,
+        telegram_message_id=message_id,
+        defaults={
+            'direction': 'inbound',
+            'sender_external_id': str(sender.get('id') or ''),
+            'sender_name': sender_name[:255],
+            'text': str(message.get('text') or message.get('caption') or ''),
+            'payload': {
+                'message_id': message.get('message_id'),
+                'message_thread_id': message.get('message_thread_id'),
+                'date': message.get('date'),
+            },
+        },
+    )
+    return True
 
 
 def close_claim_topic(thread):
