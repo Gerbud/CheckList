@@ -99,7 +99,7 @@ def create_claim_topic(thread):
         'createForumTopic',
         {'chat_id': warranty.chat_id, 'name': thread.title[:128]},
         system_settings=bot,
-        quick=True,
+        incoming=True,
         retry_on_failure=False,
     )
     result = response.data.get('result') or {}
@@ -127,7 +127,7 @@ def create_claim_topic(thread):
         'sendMessage',
         payload,
         system_settings=bot,
-        quick=True,
+        incoming=True,
         retry_on_failure=False,
     )
     message_result = message_response.data.get('result') or {}
