@@ -1531,10 +1531,12 @@ def test_webhook_rejects_get_secret_json_and_large_body(settings):
     ).status_code == 413
 
 
-def test_failed_immediate_real_response_is_queued(monkeypatch):
+def test_unbound_commands_do_not_send_access_prompt(monkeypatch):
     config = configure_bot(webhook_secret_token='webhook-test-secret')
+    requests = []
 
     def transport(api_request, timeout):
+        requests.append(api_request)
         raise urllib_error.URLError('offline')
 
     monkeypatch.setattr('checklists.telegram_client.request.urlopen', transport)
@@ -1544,18 +1546,39 @@ def test_failed_immediate_real_response_is_queued(monkeypatch):
         **webhook_headers(),
     )
     assert response.status_code == 200
-    fallback = TelegramOutboundMessage.objects.get()
-    assert fallback.idempotency_key.startswith('webhook:update:81002:')
-    assert fallback.payload['text'] == 'Доступ не подтверждён. Отправьте /start.'
-    assert fallback.payload['text'] != 'Принято'
+    assert requests == []
+    assert not TelegramOutboundMessage.objects.exists()
     log = TelegramUpdateLog.objects.get(update_id=81002)
     assert log.command == '/help'
+    assert log.response_status == TelegramUpdateLog.ResponseStatus.IGNORED
+    assert log.responded_at is not None
+    assert config.bot_token not in log.response_error
+
+
+def test_reg_user_is_the_only_unbound_access_prompt(monkeypatch):
+    config = configure_bot(webhook_secret_token='webhook-test-secret')
+
+    def transport(api_request, timeout):
+        raise urllib_error.URLError('offline')
+
+    monkeypatch.setattr('checklists.telegram_client.request.urlopen', transport)
+    response = Client().post(
+        reverse('checklists:telegram_webhook'),
+        data=json.dumps(message_update(81005, 7005, 7005, '/reg_user')),
+        **webhook_headers(),
+    )
+    assert response.status_code == 200
+    fallback = TelegramOutboundMessage.objects.get()
+    assert fallback.idempotency_key.startswith('webhook:update:81005:')
+    assert fallback.payload['text'] == 'Доступ не подтверждён. Отправьте /start.'
+    log = TelegramUpdateLog.objects.get(update_id=81005)
+    assert log.command == '/reg_user'
     assert log.response_status == TelegramUpdateLog.ResponseStatus.QUEUED
     assert log.responded_at is not None
     assert config.bot_token not in log.response_error
 
 
-def test_callback_webhook_answers_callback_and_acknowledges(monkeypatch):
+def test_unbound_callback_is_answered_without_access_prompt(monkeypatch):
     configure_bot(webhook_secret_token='webhook-test-secret')
     methods = []
 
@@ -1571,7 +1594,7 @@ def test_callback_webhook_answers_callback_and_acknowledges(monkeypatch):
     )
     assert response.status_code == 200
     assert any('/answerCallbackQuery' in url for url in methods)
-    assert any('/sendMessage' in url for url in methods)
+    assert not any('/sendMessage' in url for url in methods)
 
 
 def test_synchronous_start_is_not_processed_by_inbound_worker(monkeypatch):

@@ -951,12 +951,13 @@ def _dispatch_logged_update(log):
             if binding is None:
                 if callback.get('id'):
                     _answer_callback(callback.get('id', ''), chat['id'], update_id)
-                _reply(
-                    chat['id'],
-                    'Доступ не подтверждён. Отправьте /start.',
-                    update_id,
-                    'not-bound',
-                )
+                if command == '/reg_user':
+                    _reply(
+                        chat['id'],
+                        'Доступ не подтверждён. Отправьте /start.',
+                        update_id,
+                        'not-bound',
+                    )
             else:
                 _handle_bound(update_id, binding, message, callback, chat)
     except Exception:
