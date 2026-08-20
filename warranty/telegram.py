@@ -58,17 +58,21 @@ def update_claim_topic_icon(thread, *, bot=None):
         return thread
     warranty, configured_bot = _config()
     bot = bot or configured_bot
-    send_telegram_request(
-        'editForumTopic',
-        {
-            'chat_id': warranty.chat_id,
-            'message_thread_id': int(thread.topic_id),
-            'icon_custom_emoji_id': _topic_icon_id(thread.claim.status),
-        },
-        system_settings=bot,
-        quick=True,
-        retry_on_failure=False,
-    )
+    try:
+        send_telegram_request(
+            'editForumTopic',
+            {
+                'chat_id': warranty.chat_id,
+                'message_thread_id': int(thread.topic_id),
+                'icon_custom_emoji_id': _topic_icon_id(thread.claim.status),
+            },
+            system_settings=bot,
+            quick=True,
+            retry_on_failure=False,
+        )
+    except TelegramAPIError as exc:
+        if exc.status_code != 400 or 'TOPIC_NOT_MODIFIED' not in str(exc):
+            raise
     return thread
 
 

@@ -352,3 +352,36 @@ def test_retryable_topic_icon_error_stays_queued(monkeypatch):
     assert result['failed'] == 1
     assert thread.state == WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
     assert thread.last_error == 'request timeout'
+
+
+@pytest.mark.django_db
+def test_already_current_topic_icon_is_success(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=89, status=WarrantyClaim.Status.READY,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='462',
+        state=WarrantyTelegramThread.State.STATUS_UPDATE_PENDING,
+    )
+
+    def fake_send(method, payload, **kwargs):
+        if method == 'getForumTopicIconStickers':
+            return SimpleNamespace(data={'result': [
+                {'emoji': '✅', 'custom_emoji_id': 'ready-icon'},
+            ]})
+        raise warranty_telegram.TelegramAPIError(
+            'Bad Request: TOPIC_NOT_MODIFIED', status_code=400, retryable=False,
+        )
+
+    warranty_telegram._forum_topic_icons.cache_clear()
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'send_telegram_request', fake_send)
+
+    result = warranty_telegram.sync_warranty_topics()
+
+    thread.refresh_from_db()
+    assert result['updated'] == 1
+    assert thread.state == WarrantyTelegramThread.State.ACTIVE
