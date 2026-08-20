@@ -34,7 +34,8 @@ def _telegram(config, method, payload):
     except (error.URLError, TimeoutError, ValueError) as exc:
         raise RuntimeError('Telegram временно недоступен.') from exc
     if not data.get('ok'):
-        raise RuntimeError('Telegram не принял запрос.')
+        description = str(data.get('description') or 'неизвестная ошибка')
+        raise RuntimeError(f'Telegram не принял запрос: {description}')
     return data.get('result')
 
 
@@ -662,5 +663,7 @@ def customer_bot_webhook(request):
     except (RuntimeError, BitrixSyncError) as exc:
         if 'update_log' in locals():
             update_log.delete()
+        config.webhook_last_error = str(exc)[:2000]
+        config.save(update_fields=('webhook_last_error', 'updated_at'))
         return JsonResponse({'error': str(exc)}, status=503)
     return JsonResponse({'ok': True})
