@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _customer_bot_commands, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _customer_bot_commands, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _save_manually_entered_product_field, _start_product_consultation, _start_support_chat
 from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -454,6 +454,7 @@ def test_purchase_registration_is_idempotent(monkeypatch):
         telegram_user_id='502', chat_id='602', full_name='Иван Иванов', phone='+79991234567',
         article='A-500', serial_number='SN-500', purchase_date=date(2026, 8, 20),
         mode=WarrantyCustomerSession.Mode.REGISTRATION, step=WarrantyCustomerSession.Step.READY,
+        raw_ocr_data={'label': {'product': {'name': 'Greenworks A-500', 'url': 'https://pinel.ru/catalog/sku/500/'}}},
     )
     monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
     monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {})
@@ -478,8 +479,8 @@ def test_multiple_products_are_registered_with_one_purchase(monkeypatch):
         article='A-2', serial_number='SN-2', purchase_date=date(2026, 8, 20),
         mode=WarrantyCustomerSession.Mode.REGISTRATION, step=WarrantyCustomerSession.Step.READY,
         raw_ocr_data={'products': [
-            {'article': 'A-1', 'serial_number': 'SN-1'},
-            {'article': 'A-2', 'serial_number': 'SN-2'},
+            {'article': 'A-1', 'serial_number': 'SN-1', 'product': {'url': 'https://pinel.ru/catalog/sku/1/'}},
+            {'article': 'A-2', 'serial_number': 'SN-2', 'product': {'url': 'https://pinel.ru/catalog/sku/2/'}},
         ]},
     )
     monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
@@ -495,7 +496,7 @@ def test_done_collecting_labels_moves_registration_to_receipt(monkeypatch):
     session = WarrantyCustomerSession.objects.create(
         telegram_user_id='504', chat_id='604', mode=WarrantyCustomerSession.Mode.REGISTRATION,
         step=WarrantyCustomerSession.Step.LABEL,
-        raw_ocr_data={'products': [{'article': 'A-1', 'serial_number': 'SN-1'}]},
+        raw_ocr_data={'products': [{'article': 'A-1', 'serial_number': 'SN-1', 'product': {'url': 'https://pinel.ru/catalog/sku/1/'}}]},
     )
     sent = []
     monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
@@ -504,6 +505,69 @@ def test_done_collecting_labels_moves_registration_to_receipt(monkeypatch):
     session.refresh_from_db()
     assert session.step == session.Step.RECEIPT
     assert 'Добавлено товаров: 1' in sent[-1]
+
+
+def test_unknown_catalog_product_requests_article_manually(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='506', chat_id='606', mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.LABEL,
+        raw_ocr_data={'products': [{'article': 'BAD-1', 'serial_number': 'SN-1', 'product': {}}]},
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append(text))
+    _finish_registration_labels(config, {'id': 'cb-unknown-product', 'from': {'id': 506}})
+    session.refresh_from_db()
+    assert session.step == session.Step.ARTICLE
+    assert 'не найден' in sent[-1]
+    assert not WarrantyProductRegistration.objects.filter(profile__telegram_user_id='506').exists()
+
+
+def test_manual_article_must_resolve_to_pinel_product(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='507', chat_id='607', mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.ARTICLE,
+        raw_ocr_data={'editing_product_index': 0, 'products': [{'article': '', 'serial_number': ''}]},
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append(text))
+    monkeypatch.setattr('warranty.customer_bot.find_pinel_product', lambda article: None)
+    assert _save_manually_entered_product_field(config, session, 'article', 'BAD-2') is True
+    session.refresh_from_db()
+    assert session.step == session.Step.ARTICLE
+    assert 'не найден' in sent[-1]
+    monkeypatch.setattr('warranty.customer_bot.find_pinel_product', lambda article: {
+        'name': 'Триммер Greenworks', 'url': 'https://pinel.ru/catalog/sku/507/', 'sku': article,
+    })
+    assert _save_manually_entered_product_field(config, session, 'article', 'GW-507') is True
+    session.refresh_from_db()
+    assert session.step == session.Step.SERIAL
+
+
+def test_registration_without_recognized_purchase_date_is_blocked(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    WarrantyCustomerProfile.objects.create(
+        telegram_user_id='508', chat_id='608', consent_version=config.consent_version,
+        consent_text='Согласие', consent_accepted_at=timezone.now(),
+    )
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='508', chat_id='608', full_name='Иван Иванов', phone='+79991234567',
+        article='GW-508', serial_number='SN-508', purchase_date=None,
+        mode=WarrantyCustomerSession.Mode.REGISTRATION, step=WarrantyCustomerSession.Step.READY,
+        raw_ocr_data={'products': [{
+            'article': 'GW-508', 'serial_number': 'SN-508',
+            'product': {'url': 'https://pinel.ru/catalog/sku/508/'},
+        }]},
+    )
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._answer_callback', lambda *args: None)
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append(text))
+    _activate_registration(config, {'id': 'cb-no-date', 'from': {'id': 508}})
+    session.refresh_from_db()
+    assert session.step == session.Step.PURCHASE_DATE
+    assert 'дату покупки' in sent[-1]
+    assert not WarrantyProductRegistration.objects.filter(profile__telegram_user_id='508').exists()
 
 
 def test_arbitrary_messages_use_one_forum_topic_per_customer(monkeypatch):

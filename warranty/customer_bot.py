@@ -887,8 +887,20 @@ def _activate_registration(config, callback):
     products = session.raw_ocr_data.get('products') or [{
         'article': session.article,
         'serial_number': session.serial_number,
+        'product': (session.raw_ocr_data.get('label') or {}).get('product') or {},
         'document_id': getattr(active_documents.filter(kind='label').order_by('-id').first(), 'pk', None),
     }]
+    if not session.purchase_date:
+        session.step = session.Step.PURCHASE_DATE
+        session.save(update_fields=('step', 'updated_at'))
+        _answer_callback(config, callback, 'Укажите дату покупки вручную.')
+        _send(config, session, 'Не удалось распознать дату покупки с чека. Введите её вручную в формате ДД.ММ.ГГГГ.')
+        return
+    invalid_product = next((item for item in products if not (item.get('product') or {}).get('url')), None)
+    if invalid_product is not None:
+        _answer_callback(config, callback, 'Товар не найден в каталоге Pinel.')
+        _continue_registration_label_validation(config, session)
+        return
     registrations = []
     created_count = 0
     for item in products:
@@ -968,8 +980,9 @@ def _label_confirmation(session, receipt_prompt=True):
     product_line = f'Товар: <a href="{html.escape(url, quote=True)}">{safe_name}</a>' if url else f'Товар: {safe_name}'
     article = session.article or 'не удалось распознать'
     serial = session.serial_number or 'не удалось распознать'
+    heading = 'Отлично, товар найден 👍' if product.get('url') else 'Этикетку получил, но товар в каталоге пока не найден.'
     text = (
-        f'Отлично, товар найден 👍\n{product_line}\n'
+        f'{heading}\n{product_line}\n'
         f'Артикул: {html.escape(article)}\nСерийный номер: {html.escape(serial)}'
     )
     return text + ('\n\nТеперь пришлите фото чека 🧾' if receipt_prompt else '')
@@ -997,7 +1010,10 @@ def _continue_registration_label_validation(config, session):
     raw_data = dict(session.raw_ocr_data)
     products = list(raw_data.get('products') or [])
     for index, item in enumerate(products):
-        missing = 'article' if not str(item.get('article') or '').strip() else (
+        missing = 'article' if (
+            not str(item.get('article') or '').strip()
+            or not (item.get('product') or {}).get('url')
+        ) else (
             'serial_number' if not str(item.get('serial_number') or '').strip() else ''
         )
         if not missing:
@@ -1009,7 +1025,11 @@ def _continue_registration_label_validation(config, session):
         session.step = session.Step.ARTICLE if missing == 'article' else session.Step.SERIAL
         session.save()
         field_name = 'артикул' if missing == 'article' else 'серийный номер'
-        _send(config, session, f'У товара №{index + 1} не удалось распознать {field_name}. Напишите его вручную.')
+        if missing == 'article' and item.get('article'):
+            prompt = f'Товар №{index + 1} не найден в каталоге Pinel. Проверьте и напишите артикул вручную.'
+        else:
+            prompt = f'У товара №{index + 1} не удалось распознать {field_name}. Напишите его вручную.'
+        _send(config, session, prompt)
         return
     raw_data.pop('editing_product_index', None)
     session.raw_ocr_data = raw_data
@@ -1026,12 +1046,23 @@ def _save_manually_entered_product_field(config, session, field, value):
     products = list(raw_data.get('products') or [])
     if not 0 <= int(index) < len(products):
         return False
-    products[int(index)] = {**products[int(index)], field: value[:255]}
+    item = {**products[int(index)], field: value[:255]}
+    if field == 'article':
+        try:
+            item['product'] = find_pinel_product(value) or {}
+        except ProductImportError:
+            item['product'] = {}
+    products[int(index)] = item
     raw_data['products'] = products
     session.raw_ocr_data = raw_data
     session.article = str(products[int(index)].get('article') or '')
     session.serial_number = str(products[int(index)].get('serial_number') or '')
     session.save()
+    if field == 'article' and not (item.get('product') or {}).get('url'):
+        session.step = session.Step.ARTICLE
+        session.save(update_fields=('step', 'updated_at'))
+        _send(config, session, 'Товар с таким артикулом не найден в каталоге Pinel. Проверьте артикул и введите его ещё раз.')
+        return True
     _continue_registration_label_validation(config, session)
     return True
 
