@@ -27,6 +27,13 @@ class OpenAIModelUnavailable(RuntimeError):
     pass
 
 
+def _customer_bot_commands():
+    return [
+        {'command': 'start', 'description': 'Главное меню'},
+        {'command': 'privacy', 'description': 'Политика обработки данных'},
+    ]
+
+
 def _telegram(config, method, payload):
     url = f'https://api.telegram.org/bot{config.bot_token}/{method}'
     body = json.dumps(payload, ensure_ascii=False).encode()
@@ -708,6 +715,14 @@ def _consent_message(config):
     return f'{text}\n\n{decline}\n\n{policy_link}'
 
 
+def _send_privacy_policy(config, session):
+    link = (
+        f'<a href="{html.escape(config.privacy_policy_url, quote=True)}">'
+        'Политика обработки данных</a>'
+    )
+    return _send(config, session, link, parse_mode='HTML', disable_web_page_preview=True)
+
+
 def _ask_for_phone(config, session):
     session.step = session.Step.PHONE
     session.save(update_fields=('step', 'updated_at'))
@@ -1031,6 +1046,10 @@ def _handle_message(config, message):
     _remember(session, message.get('message_id'))
     session.save(update_fields=('chat_id', 'username', 'telegram_message_ids', 'updated_at'))
     text = (message.get('text') or '').strip()
+    command = text.split(maxsplit=1)[0].split('@', 1)[0].lower() if text.startswith('/') else ''
+    if command in ('/privacy', '/privice'):
+        _send_privacy_policy(config, session)
+        return
     if text in ('/start', '/new'):
         _clear_active_documents(session)
         session.full_name = session.phone = session.article = session.serial_number = ''

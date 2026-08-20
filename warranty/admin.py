@@ -65,7 +65,7 @@ class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
             self.message_user(request, 'Сначала укажите токен клиентского бота.', messages.ERROR)
             return super().response_change(request, obj)
 
-        from warranty.customer_bot import _telegram
+        from warranty.customer_bot import _customer_bot_commands, _telegram
 
         webhook_url = request.build_absolute_uri(reverse('warranty:customer_bot_webhook')).replace('http://', 'https://', 1)
         try:
@@ -77,6 +77,7 @@ class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
                     'allowed_updates': ['message', 'callback_query'],
                     'drop_pending_updates': False,
                 })
+                _telegram(obj, 'setMyCommands', {'commands': _customer_bot_commands()})
                 obj.webhook_url = webhook_url
                 obj.webhook_registered_at = timezone.now()
                 obj.webhook_last_error = ''
