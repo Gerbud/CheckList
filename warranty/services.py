@@ -24,12 +24,16 @@ def _queue_bitrix_update(claim):
         )
 
 
-def _record_status_change(claim, old_status, actor_name):
+def _record_status_change(
+    claim, old_status, actor_name, *, actor_external_id='', payload=None,
+):
     WarrantyHistoryEvent.objects.create(
         claim=claim,
         kind=WarrantyHistoryEvent.Kind.CHANGE,
         actor_name=actor_name,
+        actor_external_id=actor_external_id,
         text=f'Статус: {dict(WarrantyClaim.Status.choices).get(old_status, old_status)} → {claim.get_status_display()}',
+        payload=payload or {},
     )
     thread, _ = WarrantyTelegramThread.objects.get_or_create(
         claim=claim,
@@ -69,7 +73,9 @@ def update_claim(*, claim, form, actor):
 
 
 @transaction.atomic
-def apply_telegram_status_button(*, claim_id, button, actor_name):
+def apply_telegram_status_button(
+    *, claim_id, button, actor_name, actor_external_id='', actor_username='',
+):
     locked = WarrantyClaim.objects.select_for_update().get(pk=claim_id)
     if not button.is_enabled or locked.status != button.source_status:
         return locked, False
@@ -77,5 +83,16 @@ def apply_telegram_status_button(*, claim_id, button, actor_name):
     locked.status = button.target_status
     locked.save(update_fields=('status', 'closed_at', 'updated_at'))
     _queue_bitrix_update(locked)
-    _record_status_change(locked, old_status, actor_name)
+    _record_status_change(
+        locked,
+        old_status,
+        actor_name,
+        actor_external_id=actor_external_id,
+        payload={
+            'source': 'telegram_callback',
+            'telegram_username': actor_username,
+            'button_id': button.pk,
+            'button_label': button.label,
+        },
+    )
     return locked, True

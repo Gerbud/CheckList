@@ -370,13 +370,22 @@ def _handle_status_callback(callback, callback_data):
     if not thread or not button:
         return False
     sender = callback.get('from') or {}
-    actor_name = ' '.join(filter(None, (
+    full_name = ' '.join(filter(None, (
         str(sender.get('first_name') or '').strip(),
         str(sender.get('last_name') or '').strip(),
-    ))) or str(sender.get('username') or sender.get('id') or 'Telegram')
+    )))
+    actor_username = str(sender.get('username') or '').strip().lstrip('@')
+    actor_external_id = str(sender.get('id') or '')
+    actor_name = full_name or (f'@{actor_username}' if actor_username else actor_external_id or 'Telegram')
+    if full_name and actor_username:
+        actor_name = f'{full_name} (@{actor_username})'
     from warranty.services import apply_telegram_status_button
     claim, changed = apply_telegram_status_button(
-        claim_id=claim_id, button=button, actor_name=actor_name[:255],
+        claim_id=claim_id,
+        button=button,
+        actor_name=actor_name[:255],
+        actor_external_id=actor_external_id[:64],
+        actor_username=actor_username[:255],
     )
     warranty, bot = _config()
     callback_payload = {'callback_query_id': callback.get('id')}
@@ -401,12 +410,16 @@ def _handle_status_callback(callback, callback_data):
             quick=True,
         )
     if changed:
+        notification_text = (
+            f'✅ {button.label}\nНовый статус: {claim.get_status_display()}'
+            f'\nИзменил: {actor_name}'
+        )
         response = send_telegram_request(
             'sendMessage',
             {
                 'chat_id': warranty.chat_id,
                 'message_thread_id': int(thread.topic_id),
-                'text': f'✅ {button.label}\nНовый статус: {claim.get_status_display()}\nИзменил: {actor_name}',
+                'text': notification_text,
             },
             system_settings=bot,
             quick=True,
@@ -417,8 +430,9 @@ def _handle_status_callback(callback, callback_data):
             thread=thread,
             telegram_message_id=str(result.get('message_id') or ''),
             direction='outbound',
-            sender_name='Telegram bot',
-            text=f'{button.label}: {claim.get_status_display()}',
+            sender_external_id=actor_external_id[:64],
+            sender_name=actor_name[:255],
+            text=notification_text,
             payload=result if isinstance(result, dict) else {},
         )
     return True

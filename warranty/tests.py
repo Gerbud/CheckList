@@ -279,7 +279,12 @@ def test_warranty_status_callback_closes_claim_and_queues_bitrix(monkeypatch):
     update = {'callback_query': {
         'id': 'callback-1',
         'data': f'warranty:{claim.pk}:{button.pk}',
-        'from': {'id': 10, 'first_name': 'Иван'},
+        'from': {
+            'id': 10,
+            'first_name': 'Иван',
+            'last_name': 'Петров',
+            'username': 'ivan_petrov',
+        },
         'message': {
             'message_id': 800,
             'message_thread_id': 458,
@@ -294,8 +299,21 @@ def test_warranty_status_callback_closes_claim_and_queues_bitrix(monkeypatch):
     assert claim.status == WarrantyClaim.Status.CLOSED
     assert thread.state == WarrantyTelegramThread.State.CLOSE_PENDING
     assert WarrantyBitrixOutbox.objects.get(claim=claim).payload['UF_STATUS'] == '3'
-    assert WarrantyHistoryEvent.objects.filter(claim=claim, actor_name='Иван').exists()
-    assert WarrantyTelegramMessage.objects.get(thread=thread).telegram_message_id == '901'
+    history = WarrantyHistoryEvent.objects.get(claim=claim)
+    assert history.actor_name == 'Иван Петров (@ivan_petrov)'
+    assert history.actor_external_id == '10'
+    assert history.payload == {
+        'source': 'telegram_callback',
+        'telegram_username': 'ivan_petrov',
+        'button_id': button.pk,
+        'button_label': 'Выдано клиенту',
+    }
+    saved_message = WarrantyTelegramMessage.objects.get(thread=thread)
+    assert saved_message.telegram_message_id == '901'
+    assert saved_message.sender_external_id == '10'
+    assert saved_message.sender_name == 'Иван Петров (@ivan_petrov)'
+    assert 'Изменил: Иван Петров (@ivan_petrov)' in saved_message.text
+    assert calls[-1][1]['text'] == saved_message.text
     assert [method for method, payload in calls] == [
         'answerCallbackQuery', 'editMessageText', 'sendMessage',
     ]
