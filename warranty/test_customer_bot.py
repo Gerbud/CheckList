@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_support_reply, _label_confirmation, _next_missing, _openai_ocr, _phone, _recognize, _request_contacts, _route_to_support
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _phone, _recognize, _request_contacts, _route_to_support, _start_support_chat
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -16,6 +16,25 @@ def test_phone_normalization():
     assert _phone('8 (999) 123-45-67') == '+79991234567'
     assert _phone('+7 999 123 45 67') == '+79991234567'
     assert _phone('123') == ''
+
+
+def test_main_menu_has_support_button():
+    buttons = [button for row in _menu_keyboard()['inline_keyboard'] for button in row]
+    assert {'text': '💬 Написать в поддержку', 'callback_data': 'support:start'} in buttons
+
+
+def test_support_button_invites_customer_to_write_here(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
+    monkeypatch.setattr('warranty.customer_bot._send', lambda config, session, text, **kwargs: sent.append(text))
+    _start_support_chat(config, {
+        'id': 'support-callback', 'from': {'id': 700, 'username': 'buyer'},
+        'message': {'chat': {'id': 701}},
+    })
+    session = WarrantyCustomerSession.objects.get(telegram_user_id='700')
+    assert session.step == session.Step.MENU
+    assert 'прямо в этот чат' in sent[-1]
 
 
 def test_support_group_id_accepts_number_without_bot_api_prefix():

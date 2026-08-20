@@ -264,7 +264,27 @@ def _menu_keyboard():
     return {'inline_keyboard': [
         [{'text': '✅ Активировать электронную гарантию', 'callback_data': 'flow:registration'}],
         [{'text': '🛠 Оформить рекламацию', 'callback_data': 'flow:claim'}],
+        [{'text': '💬 Написать в поддержку', 'callback_data': 'support:start'}],
     ]}
+
+
+def _start_support_chat(config, callback):
+    sender = callback.get('from') or {}
+    message = callback.get('message') or {}
+    session, _ = WarrantyCustomerSession.objects.get_or_create(
+        telegram_user_id=str(sender.get('id')),
+        defaults={'chat_id': str((message.get('chat') or {}).get('id') or sender.get('id'))},
+    )
+    session.chat_id = str((message.get('chat') or {}).get('id') or session.chat_id)
+    session.username = str(sender.get('username') or '')[:255]
+    session.step = session.Step.MENU
+    session.save()
+    _answer_callback(config, callback)
+    _send(
+        config, session,
+        'Напишите ваш вопрос прямо в этот чат — обычным сообщением, фото или документом. '
+        'Я сразу передам его специалисту, а ответ придёт сюда же 💬',
+    )
 
 
 def _registered_document_ids(session):
@@ -805,6 +825,7 @@ def customer_bot_webhook(request):
             data = callback.get('data') or ''
             if data == 'flow:registration': _start_flow(config, callback, WarrantyCustomerSession.Mode.REGISTRATION)
             elif data == 'flow:claim': _start_flow(config, callback, WarrantyCustomerSession.Mode.CLAIM)
+            elif data == 'support:start': _start_support_chat(config, callback)
             elif data == 'consent:accept': _accept_consent(config, callback)
             elif data == 'consent:decline': _decline_consent(config, callback)
             elif data == 'registration:labels:done': _finish_registration_labels(config, callback)
