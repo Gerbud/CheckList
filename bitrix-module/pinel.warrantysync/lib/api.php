@@ -206,6 +206,16 @@ final class Api
         if ($content === false || strlen($content) > 20 * 1024 * 1024 || hash('sha256', $content) !== $checksum) {
             throw new \InvalidArgumentException('Некорректное содержимое файла.');
         }
+        if ($contentType === '' || $contentType === 'application/octet-stream') {
+            $detectedType = '';
+            if (class_exists('finfo')) {
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $detectedType = (string)$finfo->buffer($content);
+            }
+            if ($detectedType !== '' && $detectedType !== 'application/octet-stream') {
+                $contentType = $detectedType;
+            }
+        }
         $connection = self::connection();
         $row = $connection->query('SELECT UF_OTHER_FILES FROM warranty WHERE ID=' . $id)->fetch();
         if (!$row) {
