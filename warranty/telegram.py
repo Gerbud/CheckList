@@ -590,7 +590,8 @@ def reopen_claim_topic(thread):
 def delete_expired_claim_topics(limit=50, *, now=None):
     """Delete old closed topics from Telegram, retaining all local history."""
     now = now or timezone.now()
-    cutoff = now - timedelta(days=10)
+    retention_days = WarrantyTelegramSettings.get_solo().closed_topic_retention_days
+    cutoff = now - timedelta(days=retention_days)
     results = {'deleted': 0, 'failed': 0, 'rate_limited': 0}
     threads = WarrantyTelegramThread.objects.select_related('claim').filter(
         state=WarrantyTelegramThread.State.ARCHIVED,

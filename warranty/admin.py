@@ -155,7 +155,10 @@ class WarrantyTelegramMessageAdmin(admin.ModelAdmin):
 
 @admin.register(WarrantyTelegramSettings)
 class WarrantyTelegramSettingsAdmin(admin.ModelAdmin):
-    fields = ('peer_id', 'use_forum_topics', 'is_enabled')
+    fields = (
+        'peer_id', 'use_forum_topics', 'closed_topic_retention_days',
+        'is_enabled',
+    )
 
 
 @admin.register(WarrantyTelegramStatusButton)

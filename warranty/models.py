@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -8,6 +9,11 @@ class WarrantyTelegramSettings(models.Model):
     peer_id = models.CharField('ID Telegram-группы', max_length=64, blank=True)
     chat_id = models.CharField('ID чата для Telegram Bot API', max_length=64, blank=True)
     use_forum_topics = models.BooleanField('отдельная тема на обращение', default=True)
+    closed_topic_retention_days = models.PositiveSmallIntegerField(
+        'удалять закрытые темы через, дней', default=10,
+        validators=[MinValueValidator(1), MaxValueValidator(3650)],
+        help_text='Срок считается с момента перехода обращения в статус «Закрыт».',
+    )
     is_enabled = models.BooleanField('интеграция включена', default=False)
     updated_at = models.DateTimeField(auto_now=True)
 

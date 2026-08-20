@@ -180,11 +180,12 @@ def test_bitrix_settings_health_check(client, monkeypatch):
     assert 'Bitrix отвечает. Версия модуля: 1.0.0.' in response.content.decode()
 
 
-def test_warranty_telegram_settings_admin_only_shows_peer_id():
+def test_warranty_telegram_settings_admin_shows_topic_retention_days():
     model_admin = WarrantyTelegramSettingsAdmin(WarrantyTelegramSettings, AdminSite())
 
     assert model_admin.get_fields(None) == (
-        'peer_id', 'use_forum_topics', 'is_enabled',
+        'peer_id', 'use_forum_topics', 'closed_topic_retention_days',
+        'is_enabled',
     )
 
 
@@ -1026,6 +1027,34 @@ def test_topic_closed_exactly_ten_days_ago_is_not_deleted(monkeypatch):
     )
 
     assert delete_expired_claim_topics(now=now)['deleted'] == 0
+
+
+@pytest.mark.django_db
+def test_closed_topic_retention_uses_admin_setting(monkeypatch):
+    now = timezone.now()
+    telegram_settings = WarrantyTelegramSettings.get_solo()
+    telegram_settings.closed_topic_retention_days = 3
+    telegram_settings.save()
+    claim = WarrantyClaim.objects.create(
+        external_id=864, status=WarrantyClaim.Status.CLOSED,
+    )
+    WarrantyClaim.objects.filter(pk=claim.pk).update(closed_at=now - timedelta(days=4))
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4594',
+        state=WarrantyTelegramThread.State.ARCHIVED,
+    )
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda *args, **kwargs: SimpleNamespace(data={'result': True}),
+    )
+
+    assert delete_expired_claim_topics(now=now)['deleted'] == 1
+    thread.refresh_from_db()
+    assert thread.state == WarrantyTelegramThread.State.DELETED
 
 
 @pytest.mark.django_db
