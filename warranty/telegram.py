@@ -708,18 +708,22 @@ def refresh_claim_buttons_for_statuses(statuses):
         topic_id__gt='',
     ).order_by('id')
     for thread in threads:
-        try:
-            if update_claim_topic_message(thread, force=True):
-                results['updated'] += 1
-            else:
-                results['skipped'] += 1
-        except TelegramAPIError as exc:
-            if exc.status_code == 429:
-                results['rate_limited'] += 1
+        for attempt in range(2):
+            try:
+                if update_claim_topic_message(thread, force=True):
+                    results['updated'] += 1
+                else:
+                    results['skipped'] += 1
                 break
-            results['failed'] += 1
-            if exc.retryable:
+            except TelegramAPIError as exc:
+                if exc.status_code == 429:
+                    results['rate_limited'] += 1
+                    return results
+                if exc.retryable and attempt == 0:
+                    continue
+                results['failed'] += 1
                 break
-        except (TypeError, ValueError):
-            results['failed'] += 1
+            except (TypeError, ValueError):
+                results['failed'] += 1
+                break
     return results

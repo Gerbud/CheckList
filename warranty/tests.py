@@ -370,6 +370,37 @@ def test_button_refresh_updates_only_claims_in_selected_statuses(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_button_refresh_retries_transient_error_and_continues(monkeypatch):
+    claims = [
+        WarrantyClaim.objects.create(external_id=923 + index, status=WarrantyClaim.Status.NEW)
+        for index in range(2)
+    ]
+    threads = [
+        WarrantyTelegramThread.objects.create(
+            claim=claim, topic_id=str(540 + index),
+            state=WarrantyTelegramThread.State.ACTIVE,
+        )
+        for index, claim in enumerate(claims)
+    ]
+    attempts = []
+
+    def update_with_timeout(thread, **kwargs):
+        attempts.append(thread.pk)
+        if thread.pk == threads[0].pk and attempts.count(thread.pk) == 1:
+            raise warranty_telegram.TelegramAPIError('request timeout')
+        return True
+
+    monkeypatch.setattr(
+        warranty_telegram, 'update_claim_topic_message', update_with_timeout,
+    )
+
+    result = refresh_claim_buttons_for_statuses([WarrantyClaim.Status.NEW])
+
+    assert result == {'updated': 2, 'skipped': 0, 'failed': 0, 'rate_limited': 0}
+    assert attempts == [threads[0].pk, threads[0].pk, threads[1].pk]
+
+
+@pytest.mark.django_db
 def test_status_button_admin_refreshes_old_and_new_source_status(monkeypatch):
     button = WarrantyTelegramStatusButton.objects.create(
         source_status=WarrantyClaim.Status.NEW,
