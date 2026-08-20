@@ -1,0 +1,7 @@
+<label class="upload-card{% if field.errors %} has-error{% endif %}">
+  <span class="upload-icon">{{ icon }}</span>
+  <span><strong>{{ field.label }}</strong><small>{{ hint }}</small><em>Выбрать или снять фото</em></span>
+  {{ field }}
+  <span class="file-name"></span>
+  {% if field.errors %}<span class="field-error">{{ field.errors|striptags }}</span>{% endif %}
+</label>

@@ -1,0 +1,108 @@
+{% load static %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#121712">
+  <title>PINEL Сервис — электронная гарантия Greenworks</title>
+  <meta name="description" content="Активируйте гарантию Greenworks или оформите гарантийное обращение онлайн.">
+  <link rel="stylesheet" href="{% static 'warranty/service/service.css' %}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="pinel-logo" href="https://pinel.ru/" aria-label="PINEL">
+      <img src="https://pinel.ru/upload/dev2fun_opengraph/396/00ruho3aljeoaff0tx1uoc01c5ai5i38.webp" alt="PINEL">
+    </a>
+    <span class="header-divider"></span>
+    <span class="service-name">Сервис и гарантия</span>
+    <img class="greenworks-logo" src="https://pinel.ru/upload/resize_cache/iblock/2f7/150_150_1/mscjoa997wu11kkrmm81n570dmpe8an4.webp" alt="Greenworks">
+  </header>
+
+  <main>
+    {% if result %}
+      <section class="success-card" aria-live="polite">
+        <span class="success-icon">✓</span>
+        {% if result.kind == 'claim' %}
+          <p class="eyebrow">Обращение принято</p>
+          <h1>Заявка №{{ result.number }} оформлена</h1>
+          <p>Специалист сервисного центра свяжется с вами по указанному номеру. Сохраните номер заявки.</p>
+          {% if result.blank_url %}<a class="primary-button" href="{{ result.blank_url }}">Скачать бланк обращения</a>{% endif %}
+        {% else %}
+          <p class="eyebrow">Гарантия активна</p>
+          <h1>Покупка зарегистрирована</h1>
+          <p>Мы сохранили данные товара и чек. Если понадобится сервис, оформить обращение можно здесь же.</p>
+          <a class="primary-button" href="/?flow=claim">Сообщить о неисправности</a>
+        {% endif %}
+        <a class="text-link" href="/">Вернуться на главную</a>
+      </section>
+    {% else %}
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Официальный сервис PINEL</p>
+          <h1>Гарантия без поездки в магазин</h1>
+          <p class="hero-copy">Сфотографируйте документы, заполните данные — остальное сделаем мы.</p>
+        </div>
+        <div class="trust-card">
+          <span>Обычно занимает</span><strong>5 минут</strong>
+          <span>Понадобятся</span><strong>товар и чек</strong>
+        </div>
+      </section>
+
+      <form method="post" enctype="multipart/form-data" class="service-form" novalidate>
+        {% csrf_token %}
+        {{ form.flow }}
+        <nav class="flow-switch" aria-label="Выберите действие">
+          <button type="button" data-flow="registration">Активировать гарантию<small>Сохранить покупку и чек</small></button>
+          <button type="button" data-flow="claim">Оформить обращение<small>Если товар неисправен</small></button>
+        </nav>
+
+        {% if service_error %}<div class="form-alert">{{ service_error }}</div>{% endif %}
+        {% if form.non_field_errors %}<div class="form-alert">{{ form.non_field_errors }}</div>{% endif %}
+
+        <div class="progress" aria-hidden="true"><span></span><span></span><span></span></div>
+
+        <section class="form-step is-active" data-step="0">
+          <p class="step-label">Шаг 1 из 3</p>
+          <h2>Сфотографируйте документы</h2>
+          <p class="section-copy">Положите документ на ровную поверхность. Весь текст должен быть в кадре и без бликов.</p>
+          <div class="upload-grid">
+            {% include 'warranty/service_upload.html' with field=form.label_photo icon='▣' hint='На корпусе или коробке' %}
+            {% include 'warranty/service_upload.html' with field=form.receipt_photo icon='▤' hint='Бумажный или электронный' %}
+            <div class="claim-only">{% include 'warranty/service_upload.html' with field=form.warranty_card_photo icon='◇' hint='Заполненная сторона' %}</div>
+          </div>
+          <button type="button" class="primary-button next">Продолжить</button>
+        </section>
+
+        <section class="form-step" data-step="1">
+          <p class="step-label">Шаг 2 из 3</p>
+          <h2>Данные товара</h2>
+          <p class="section-copy">Артикул и серийный номер указаны на этикетке. Проверьте их внимательно.</p>
+          <div class="fields two-columns">
+            {% include 'warranty/service_field.html' with field=form.article placeholder='Например, 2506807' %}
+            {% include 'warranty/service_field.html' with field=form.serial_number placeholder='Серийный номер' %}
+            {% include 'warranty/service_field.html' with field=form.purchase_date %}
+            <div class="claim-only full-width">{% include 'warranty/service_field.html' with field=form.defect placeholder='Опишите, что не работает и как проявляется неисправность' %}</div>
+          </div>
+          <div class="step-actions"><button type="button" class="secondary-button back">Назад</button><button type="button" class="primary-button next">Продолжить</button></div>
+        </section>
+
+        <section class="form-step" data-step="2">
+          <p class="step-label">Шаг 3 из 3</p>
+          <h2>Как с вами связаться</h2>
+          <div class="fields two-columns">
+            {% include 'warranty/service_field.html' with field=form.full_name placeholder='Иванов Иван Иванович' %}
+            {% include 'warranty/service_field.html' with field=form.phone placeholder='+7 999 123-45-67' %}
+          </div>
+          <label class="consent-row">{{ form.consent }}<span>Я даю {{ operator }} согласие на обработку персональных данных для регистрации покупки и гарантийного обслуживания. <a href="{{ privacy_policy_url }}" target="_blank" rel="noopener">Политика обработки данных</a>.</span></label>
+          {% if form.consent.errors %}<div class="field-error">{{ form.consent.errors|striptags }}</div>{% endif %}
+          <div class="summary-note">Данные передаются по защищённому соединению. Мы используем их только для гарантии и связи по обращению.</div>
+          <div class="step-actions"><button type="button" class="secondary-button back">Назад</button><button type="submit" class="primary-button submit-button"><span class="registration-label">Активировать гарантию</span><span class="claim-label">Отправить обращение</span></button></div>
+        </section>
+      </form>
+    {% endif %}
+  </main>
+  <footer><span>© PINEL</span><a href="https://pinel.ru/guarantee/">Условия гарантии</a><a href="mailto:service@pinel.ru">service@pinel.ru</a></footer>
+  <script src="{% static 'warranty/service/service.js' %}"></script>
+</body>
+</html>

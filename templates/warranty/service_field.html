@@ -1,0 +1,6 @@
+<label class="field{% if field.errors %} has-error{% endif %}">
+  <span>{{ field.label }}</span>
+  {{ field }}
+  {% if placeholder %}<script>document.currentScript.previousElementSibling.placeholder='{{ placeholder|escapejs }}'</script>{% endif %}
+  {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+</label>

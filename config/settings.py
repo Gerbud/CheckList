@@ -67,6 +67,8 @@ ALLOWED_HOSTS = [
 ]
 if 'checklist.es-helper.ru' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('checklist.es-helper.ru')
+if 'service.pinel.ru' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('service.pinel.ru')
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
@@ -78,6 +80,8 @@ CSRF_TRUSTED_ORIGINS = [
     ).split(',')
     if origin.strip()
 ]
+if 'https://service.pinel.ru' not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append('https://service.pinel.ru')
 
 
 # Application definition
@@ -95,6 +99,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'warranty.middleware.ServiceDomainMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
