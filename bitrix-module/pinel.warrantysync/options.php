@@ -32,7 +32,7 @@ $secretConfigured = COption::GetOptionString($moduleId, 'secret', '') !== '';
 $webhookActive = COption::GetOptionString($moduleId, 'webhook_active', 'N');
 $webhookUrl = COption::GetOptionString($moduleId, 'webhook_url', '');
 $apiUrl = (CMain::IsHTTPS() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . '/warranty-sync/';
-$moduleVersion = '1.3.3';
+$moduleVersion = '1.3.4';
 ?>
 <style>
     #pinel-warranty-sync { max-width: 980px; margin-top: 18px; color: #263238; }

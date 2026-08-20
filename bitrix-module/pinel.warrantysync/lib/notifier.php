@@ -8,15 +8,22 @@ final class Notifier
 {
     private const MODULE_ID = 'pinel.warrantysync';
 
-    public static function handleWarrantyEvent(Event $event)
+    public static function handleWarrantyEvent($event, array $fields = array(), $entity = null)
     {
-        $id = $event->getParameter('id');
-        if (is_array($id)) {
-            $id = current($id);
+        if ($event instanceof Event) {
+            $id = $event->getParameter('id');
+            if (is_array($id)) {
+                $id = current($id);
+            }
+            $eventName = substr((string)$event->getEventType(), -10) === 'OnAfterAdd'
+                ? 'claim.added'
+                : 'claim.updated';
+        } else {
+            // Custom WarrantyOnAfter* events use the legacy Bitrix handler
+            // signature: entity ID, changed fields, entity object.
+            $id = $event;
+            $eventName = 'claim.updated';
         }
-        $eventName = substr((string)$event->getEventType(), -10) === 'OnAfterAdd'
-            ? 'claim.added'
-            : 'claim.updated';
         self::notify($eventName, (int)$id);
     }
 
