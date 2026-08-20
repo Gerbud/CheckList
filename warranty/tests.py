@@ -13,7 +13,7 @@ from warranty.forms import WarrantyClaimUpdateForm
 from warranty.admin import WarrantyTelegramSettingsAdmin
 from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 from warranty.services import update_claim
-from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update
+from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, update_claim_topic_message
 import warranty.telegram as warranty_telegram
 
 
@@ -165,6 +165,7 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
     assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
     assert 'Иван &lt;Иванов&gt;' in message
     assert '🏷 <b>Статус:</b> Диагностика #статус_диагностика' in message
+    assert '🛠 <b>Тип ремонта:</b> По гарантии' in message
     assert '<b>Куплено у нас:</b> Да' in message
     assert '<b>Товар находится:</b> у клиента' in message
     assert message.endswith('🔗 <a href="https://pinel.example/claims/?search_str=81">Открыть обращение на сайте</a>')
@@ -182,6 +183,53 @@ def test_telegram_claim_message_shows_our_location():
 
     assert '<b>Куплено у нас:</b> Нет' in message
     assert '<b>Товар находится:</b> у нас' in message
+
+
+@pytest.mark.django_db
+def test_telegram_claim_message_shows_non_warranty_repair():
+    claim = WarrantyClaim.objects.create(
+        external_id=91,
+        warranty_type=WarrantyClaim.WarrantyType.NON_WARRANTY,
+    )
+
+    assert '<b>Тип ремонта:</b> Не по гарантии' in _claim_message(claim)
+
+
+@pytest.mark.django_db
+def test_existing_topic_update_edits_only_recorded_intro(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=92,
+        warranty_type=WarrantyClaim.WarrantyType.NON_WARRANTY,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='500',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    intro = WarrantyTelegramMessage.objects.create(
+        thread=thread, telegram_message_id='1000', direction='outbound',
+        sender_name='Telegram bot', text='Старый текст',
+    )
+    WarrantyTelegramMessage.objects.create(
+        thread=thread, telegram_message_id='1001', direction='inbound',
+        sender_name='Иван', text='Обсуждение',
+    )
+    calls = []
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda method, payload, **kwargs: calls.append((method, payload)),
+    )
+
+    assert update_claim_topic_message(thread) is True
+
+    intro.refresh_from_db()
+    assert calls[0][0] == 'editMessageText'
+    assert calls[0][1]['message_id'] == 1000
+    assert '<b>Тип ремонта:</b> Не по гарантии' in intro.text
+    assert thread.messages.get(telegram_message_id='1001').text == 'Обсуждение'
 
 
 @pytest.mark.django_db

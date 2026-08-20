@@ -151,9 +151,11 @@ def _claim_message(claim):
     status_hashtag = CLAIM_STATUS_HASHTAG.get(
         claim.status, '#статус_неизвестен',
     )
+    repair_type = claim.get_warranty_type_display()
     return (
         f'🛡 <b>Гарантийное обращение №{claim.external_id}</b>\n\n'
         f'🏷 <b>Статус:</b> {html.escape(claim.get_status_display())} {status_hashtag}\n'
+        f'🛠 <b>Тип ремонта:</b> {html.escape(repair_type)}\n'
         f'🏪 <b>Куплено у нас:</b> {purchased_from_us}\n'
         f'📍 <b>Товар находится:</b> {product_location}\n\n'
         f'📦 <b>Товар</b>\n{product}\n\n'
@@ -162,6 +164,46 @@ def _claim_message(claim):
         f'🛠 <b>Неисправность</b>\n{html.escape(claim.defect or "—")}\n\n'
         f'{claim_link}'
     )
+
+
+def _claim_intro_message(thread):
+    return thread.messages.filter(
+        direction='outbound',
+        sender_name='Telegram bot',
+    ).exclude(telegram_message_id='').order_by('sent_at', 'id').first()
+
+
+def update_claim_topic_message(thread, *, bot=None):
+    """Edit only the recorded bot introduction; never replace topic discussion."""
+    intro = _claim_intro_message(thread)
+    if not intro:
+        return False
+    warranty, configured_bot = _config()
+    bot = bot or configured_bot
+    text = _claim_message(thread.claim)
+    try:
+        send_telegram_request(
+            'editMessageText',
+            {
+                'chat_id': warranty.chat_id,
+                'message_id': int(intro.telegram_message_id),
+                'text': text,
+                'parse_mode': 'HTML',
+                'disable_web_page_preview': True,
+                'reply_markup': _status_keyboard(thread.claim),
+            },
+            system_settings=bot,
+            quick=True,
+            retry_on_failure=False,
+        )
+    except TelegramAPIError as exc:
+        if exc.status_code != 400 or 'MESSAGE_NOT_MODIFIED' not in str(exc):
+            raise
+    if intro.text != text:
+        intro.text = text
+        intro.edited_at = timezone.now()
+        intro.save(update_fields=('text', 'edited_at'))
+    return True
 
 
 def _status_keyboard(claim):
@@ -516,6 +558,7 @@ def sync_warranty_topics(limit=50):
                 results['reopened'] += 1
             else:
                 update_claim_topic_icon(thread)
+                update_claim_topic_message(thread)
                 thread.state = WarrantyTelegramThread.State.ACTIVE
                 thread.last_error = ''
                 thread.save(update_fields=('state', 'last_error', 'updated_at'))
@@ -540,5 +583,29 @@ def sync_warranty_topics(limit=50):
             thread.state = WarrantyTelegramThread.State.ERROR
             thread.last_error = str(exc)
             thread.save(update_fields=('state', 'last_error', 'updated_at'))
+            results['failed'] += 1
+    return results
+
+
+def refresh_existing_claim_messages(limit=200):
+    """Refresh recorded introductions without deleting or adding topic messages."""
+    results = {'updated': 0, 'skipped': 0, 'failed': 0, 'rate_limited': 0}
+    threads = WarrantyTelegramThread.objects.select_related('claim').filter(
+        topic_id__gt='',
+    ).order_by('id')[:limit]
+    for thread in threads:
+        try:
+            if update_claim_topic_message(thread):
+                results['updated'] += 1
+            else:
+                results['skipped'] += 1
+        except TelegramAPIError as exc:
+            if exc.status_code == 429:
+                results['rate_limited'] += 1
+                break
+            results['failed'] += 1
+            if exc.retryable:
+                break
+        except (TypeError, ValueError):
             results['failed'] += 1
     return results
