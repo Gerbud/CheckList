@@ -5,8 +5,8 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import _accept_consent, _activate_registration, _create_claim, _extract_ocr_fields, _next_missing, _phone, _recognize
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyProductRegistration
+from warranty.customer_bot import _accept_consent, _activate_registration, _create_claim, _extract_ocr_fields, _handle_support_reply, _next_missing, _phone, _recognize, _route_to_support
+from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
 pytestmark = pytest.mark.django_db
@@ -124,6 +124,44 @@ def test_purchase_registration_is_idempotent(monkeypatch):
     profile.refresh_from_db()
     assert WarrantyProductRegistration.objects.filter(profile=profile).count() == 1
     assert profile.phone == '+79991234567'
+
+
+def test_arbitrary_messages_use_one_forum_topic_per_customer(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.support_group_id = '-100777'
+    session = WarrantyCustomerSession.objects.create(telegram_user_id='900', chat_id='901', username='buyer')
+    calls = []
+
+    def telegram(config, method, payload):
+        calls.append((method, payload))
+        if method == 'createForumTopic': return {'message_thread_id': 500}
+        return {'message_id': 1000 + len(calls)}
+
+    monkeypatch.setattr('warranty.customer_bot._telegram', telegram)
+    monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {})
+    _route_to_support(config, session, {'message_id': 10, 'text': 'Нужна помощь'})
+    _route_to_support(config, session, {'message_id': 11, 'text': 'Есть вопрос'})
+    thread = WarrantyCustomerSupportThread.objects.get(telegram_user_id='900')
+    assert thread.message_thread_id == '500'
+    assert WarrantyCustomerSupportMessage.objects.filter(thread=thread, direction='customer').count() == 2
+    assert [method for method, payload in calls].count('createForumTopic') == 1
+    assert [method for method, payload in calls].count('copyMessage') == 2
+
+
+def test_support_topic_reply_is_copied_to_customer_once(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    config.support_group_id = '-100777'
+    thread = WarrantyCustomerSupportThread.objects.create(
+        telegram_user_id='910', customer_chat_id='911', support_chat_id='-100777', message_thread_id='510',
+    )
+    calls = []
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda config, method, payload: calls.append((method, payload)) or {'message_id': 701})
+    message = {'message_id': 601, 'message_thread_id': 510, 'chat': {'id': -100777}, 'from': {'id': 42}, 'text': 'Ответ'}
+    assert _handle_support_reply(config, message) is True
+    assert _handle_support_reply(config, message) is True
+    assert WarrantyCustomerSupportMessage.objects.filter(thread=thread, direction='support').count() == 1
+    assert len(calls) == 1
+    assert calls[0][1]['chat_id'] == '911'
 
 
 def test_missing_recognized_fields_are_requested_in_order():

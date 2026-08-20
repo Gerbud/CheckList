@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyProductRegistration, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
+from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyProductRegistration, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
 
 for model in (WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramThread, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
     admin.site.register(model)
@@ -12,6 +12,8 @@ for model in (WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, Warran
 admin.site.register(WarrantyCustomerSession)
 admin.site.register(WarrantyCustomerDocument)
 admin.site.register(WarrantyCustomerUpdate)
+admin.site.register(WarrantyCustomerSupportThread)
+admin.site.register(WarrantyCustomerSupportMessage)
 
 
 @admin.register(WarrantyCustomerProfile)
@@ -38,7 +40,7 @@ class WarrantyProductRegistrationAdmin(admin.ModelAdmin):
 class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
     change_form_template = 'admin/warranty/warrantycustomerbotsettings/change_form.html'
     fields = (
-        'bot_token', 'is_enabled',
+        'bot_token', 'is_enabled', 'support_group_id',
         'ocr_api_key', 'ocr_model', 'ocr_space_api_key', 'tesseract_command', 'welcome_text',
         'personal_data_operator', 'personal_data_operator_address', 'privacy_policy_url',
         'consent_withdrawal_contact', 'consent_version',

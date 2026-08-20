@@ -60,6 +60,10 @@ class WarrantyCustomerBotSettings(models.Model):
     webhook_url = models.URLField('адрес webhook', blank=True)
     webhook_registered_at = models.DateTimeField('webhook зарегистрирован', null=True, blank=True)
     webhook_last_error = models.TextField('ошибка webhook', blank=True)
+    support_group_id = models.CharField(
+        'ID группы поддержки', max_length=64, blank=True,
+        help_text='ID отдельной Telegram supergroup с включёнными темами, например -1001234567890.',
+    )
     personal_data_operator = models.CharField('оператор персональных данных', max_length=500, default='ИП Савченко Е.В.')
     personal_data_operator_address = models.CharField('адрес оператора', max_length=500, default='195176, г. Санкт-Петербург, ул. Апрельская, д. 5')
     privacy_policy_url = models.URLField('политика обработки данных', default='https://pinel.ru/privacy-policy/')
@@ -176,6 +180,34 @@ class WarrantyProductRegistration(models.Model):
 class WarrantyCustomerUpdate(models.Model):
     update_id = models.PositiveBigIntegerField(unique=True)
     received_at = models.DateTimeField(auto_now_add=True)
+
+
+class WarrantyCustomerSupportThread(models.Model):
+    telegram_user_id = models.CharField(max_length=64, unique=True)
+    customer_chat_id = models.CharField(max_length=64)
+    support_chat_id = models.CharField(max_length=64)
+    message_thread_id = models.CharField(max_length=64)
+    username = models.CharField(max_length=255, blank=True)
+    customer_name = models.CharField(max_length=255, blank=True)
+    telegram_message_ids = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('support_chat_id', 'message_thread_id'), name='unique_customer_support_topic')]
+
+
+class WarrantyCustomerSupportMessage(models.Model):
+    thread = models.ForeignKey(WarrantyCustomerSupportThread, on_delete=models.CASCADE, related_name='messages')
+    direction = models.CharField(max_length=16, choices=(('customer', 'От клиента'), ('support', 'От поддержки')))
+    source_message_id = models.CharField(max_length=64)
+    copied_message_id = models.CharField(max_length=64, blank=True)
+    sender_external_id = models.CharField(max_length=64, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('thread', 'direction', 'source_message_id'), name='unique_customer_support_message')]
 
 
 class WarrantyClaim(models.Model):

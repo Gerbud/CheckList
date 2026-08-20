@@ -18,7 +18,7 @@ from django.views.decorators.csrf import csrf_exempt
 from PIL import Image, ImageOps
 
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyProductRegistration
+from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
 def _telegram(config, method, payload):
@@ -228,6 +228,85 @@ def _clear_active_documents(session):
     _active_documents(session).delete()
 
 
+def _support_thread(config, session):
+    thread = WarrantyCustomerSupportThread.objects.filter(telegram_user_id=session.telegram_user_id).first()
+    if thread:
+        return thread
+    if not config.support_group_id:
+        return None
+    profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id).first()
+    customer_name = (profile.full_name if profile else '') or session.username or f'ID {session.telegram_user_id}'
+    title = f'Клиент · {customer_name}'[:128]
+    topic = _telegram(config, 'createForumTopic', {'chat_id': config.support_group_id, 'name': title})
+    thread = WarrantyCustomerSupportThread.objects.create(
+        telegram_user_id=session.telegram_user_id, customer_chat_id=session.chat_id,
+        support_chat_id=config.support_group_id, message_thread_id=str(topic['message_thread_id']),
+        username=session.username, customer_name=customer_name,
+    )
+    intro = _telegram(config, 'sendMessage', {
+        'chat_id': thread.support_chat_id, 'message_thread_id': int(thread.message_thread_id),
+        'text': f'Новый диалог с клиентом\nTelegram ID: {session.telegram_user_id}\nПользователь: @{session.username}' if session.username else f'Новый диалог с клиентом\nTelegram ID: {session.telegram_user_id}',
+    })
+    if isinstance(intro, dict) and intro.get('message_id'):
+        thread.telegram_message_ids = [str(intro['message_id'])]
+        thread.save(update_fields=('telegram_message_ids', 'updated_at'))
+    return thread
+
+
+def _route_to_support(config, session, message):
+    thread = _support_thread(config, session)
+    if not thread:
+        _send(config, session, 'Я пока не понял сообщение. Выберите действие кнопкой или отправьте /start.')
+        return
+    source_message_id = str(message.get('message_id') or '')
+    if WarrantyCustomerSupportMessage.objects.filter(thread=thread, direction='customer', source_message_id=source_message_id).exists():
+        return
+    copied = _telegram(config, 'copyMessage', {
+        'chat_id': thread.support_chat_id, 'from_chat_id': session.chat_id,
+        'message_id': int(source_message_id), 'message_thread_id': int(thread.message_thread_id),
+    })
+    copied_id = str((copied or {}).get('message_id') or '')
+    WarrantyCustomerSupportMessage.objects.create(
+        thread=thread, direction='customer', source_message_id=source_message_id,
+        copied_message_id=copied_id, sender_external_id=session.telegram_user_id, payload=message,
+    )
+    for value in (source_message_id, copied_id):
+        if value and value not in thread.telegram_message_ids:
+            thread.telegram_message_ids.append(value)
+    thread.customer_chat_id = session.chat_id
+    thread.save(update_fields=('customer_chat_id', 'telegram_message_ids', 'updated_at'))
+    _send(config, session, 'Передал сообщение специалисту 💬 Ответ придёт сюда. А пока можно продолжить оформление кнопками ниже.', reply_markup=_menu_keyboard())
+
+
+def _handle_support_reply(config, message):
+    chat_id = str((message.get('chat') or {}).get('id') or '')
+    topic_id = str(message.get('message_thread_id') or '')
+    if not config.support_group_id or chat_id != str(config.support_group_id):
+        return False
+    if not topic_id or any(key in message for key in ('forum_topic_created', 'forum_topic_closed', 'forum_topic_reopened', 'forum_topic_edited')):
+        return True
+    thread = WarrantyCustomerSupportThread.objects.filter(support_chat_id=chat_id, message_thread_id=topic_id).first()
+    if not thread:
+        return True
+    source_message_id = str(message.get('message_id') or '')
+    if WarrantyCustomerSupportMessage.objects.filter(thread=thread, direction='support', source_message_id=source_message_id).exists():
+        return True
+    copied = _telegram(config, 'copyMessage', {
+        'chat_id': thread.customer_chat_id, 'from_chat_id': chat_id, 'message_id': int(source_message_id),
+    })
+    copied_id = str((copied or {}).get('message_id') or '')
+    sender = message.get('from') or {}
+    WarrantyCustomerSupportMessage.objects.create(
+        thread=thread, direction='support', source_message_id=source_message_id,
+        copied_message_id=copied_id, sender_external_id=str(sender.get('id') or ''), payload=message,
+    )
+    for value in (source_message_id, copied_id):
+        if value and value not in thread.telegram_message_ids:
+            thread.telegram_message_ids.append(value)
+    thread.save(update_fields=('telegram_message_ids', 'updated_at'))
+    return True
+
+
 def _consent_text(config):
     external_ocr = [name for enabled, name in (
         (config.ocr_api_key, 'OpenAI'), (config.ocr_space_api_key, 'OCR.space'),
@@ -381,7 +460,10 @@ def _activate_registration(config, callback):
 def _save_photo(config, session, message, kind):
     photos = message.get('photo') or []
     if not photos:
-        _send(config, session, 'Пожалуйста, пришлите именно фотографию.')
+        if message.get('text'):
+            _route_to_support(config, session, message)
+        else:
+            _send(config, session, 'Пожалуйста, пришлите именно фотографию.')
         return False
     file_id = photos[-1]['file_id']
     content, content_type, extension = _download_photo(config, file_id)
@@ -449,7 +531,7 @@ def _handle_message(config, message):
         except ValueError: _send(config, session, 'Введите дату в формате ДД.ММ.ГГГГ.'); return
         _show_next(config, session)
     else:
-        _send(config, session, 'Чтобы начать новое оформление, отправьте /new.')
+        _route_to_support(config, session, message)
 
 
 def _create_claim(config, callback):
@@ -522,7 +604,10 @@ def customer_bot_webhook(request):
             elif data.startswith('claim:product:'): _select_claim_product(config, callback, data.rsplit(':', 1)[-1])
             elif data == 'warranty:activate': _activate_registration(config, callback)
             elif data == 'warranty:create': _create_claim(config, callback)
-        elif update.get('message'): _handle_message(config, update['message'])
+        elif update.get('message'):
+            message = update['message']
+            if not _handle_support_reply(config, message):
+                _handle_message(config, message)
     except (ValueError, KeyError, WarrantyCustomerSession.DoesNotExist, WarrantyCustomerProfile.DoesNotExist, WarrantyProductRegistration.DoesNotExist):
         return JsonResponse({'error': 'invalid update'}, status=400)
     except (RuntimeError, BitrixSyncError) as exc:
