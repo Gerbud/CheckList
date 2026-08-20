@@ -3,9 +3,10 @@ from datetime import date
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 
-from warranty.customer_bot import _create_claim, _extract_ocr_fields, _next_missing, _phone, _recognize
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerSession
+from warranty.customer_bot import _accept_consent, _activate_registration, _create_claim, _extract_ocr_fields, _next_missing, _phone, _recognize
+from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyProductRegistration
 
 
 pytestmark = pytest.mark.django_db
@@ -70,6 +71,9 @@ def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
             'bot_token': 'new-token', 'is_enabled': 'on', 'ocr_api_key': '',
             'ocr_model': 'gpt-4.1-mini', 'ocr_space_api_key': '',
             'tesseract_command': 'tesseract', 'welcome_text': 'Здравствуйте!',
+            'personal_data_operator': 'ИП Тест', 'personal_data_operator_address': 'Москва',
+            'privacy_policy_url': 'https://example.com/privacy/',
+            'consent_withdrawal_contact': 'privacy@example.com', 'consent_version': '1.0',
             '_register_webhook': 'Создать webhook',
         },
     )
@@ -78,6 +82,48 @@ def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
     assert not config.webhook_secret_token.startswith('http')
     assert calls[0][0] == 'setWebhook'
     assert calls[0][1]['secret_token'] == config.webhook_secret_token
+
+
+def test_consent_is_saved_with_version_text_and_telegram_evidence(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='501', chat_id='601', username='buyer',
+        mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.CONSENT,
+    )
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
+    monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {})
+    _accept_consent(config, {'id': 'cb-consent', 'from': {'id': 501}, 'message': {'message_id': 701}})
+    profile = WarrantyCustomerProfile.objects.get(telegram_user_id='501')
+    session.refresh_from_db()
+    assert profile.consent_version == config.consent_version
+    assert profile.consent_message_id == '701'
+    assert config.personal_data_operator in profile.consent_text
+    assert profile.consent_accepted_at is not None
+    assert session.step == session.Step.LABEL
+
+
+def test_purchase_registration_is_idempotent(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    profile = WarrantyCustomerProfile.objects.create(
+        telegram_user_id='502', chat_id='602', consent_version='1.0',
+        consent_text='Согласие', consent_accepted_at=timezone.now(),
+    )
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='502', chat_id='602', full_name='Иван Иванов', phone='+79991234567',
+        article='A-500', serial_number='SN-500', purchase_date=date(2026, 8, 20),
+        mode=WarrantyCustomerSession.Mode.REGISTRATION, step=WarrantyCustomerSession.Step.READY,
+    )
+    monkeypatch.setattr('warranty.customer_bot._telegram', lambda *args, **kwargs: {})
+    monkeypatch.setattr('warranty.customer_bot._send', lambda *args, **kwargs: {})
+    callback = {'id': 'cb-register', 'from': {'id': 502}}
+    _activate_registration(config, callback)
+    session.step = session.Step.READY
+    session.save(update_fields=('step',))
+    _activate_registration(config, callback)
+    profile.refresh_from_db()
+    assert WarrantyProductRegistration.objects.filter(profile=profile).count() == 1
+    assert profile.phone == '+79991234567'
 
 
 def test_missing_recognized_fields_are_requested_in_order():

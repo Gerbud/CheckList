@@ -12,12 +12,13 @@ from urllib import error, parse, request
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from PIL import Image, ImageOps
 
 from warranty.bitrix_sync import BitrixSyncError, BitrixWarrantyClient
-from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerSession, WarrantyCustomerUpdate
+from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyProductRegistration
 
 
 def _telegram(config, method, payload):
@@ -200,8 +201,181 @@ def _show_next(config, session):
     session.save()
     extra = {}
     if session.step == session.Step.READY:
-        extra['reply_markup'] = {'inline_keyboard': [[{'text': 'Оформить рекламацию', 'callback_data': 'warranty:create'}]]}
+        if session.mode == session.Mode.REGISTRATION:
+            extra['reply_markup'] = {'inline_keyboard': [[{'text': 'Активировать гарантию', 'callback_data': 'warranty:activate'}]]}
+        else:
+            extra['reply_markup'] = {'inline_keyboard': [[{'text': 'Оформить рекламацию', 'callback_data': 'warranty:create'}]]}
     _send(config, session, text, **extra)
+
+
+def _menu_keyboard():
+    return {'inline_keyboard': [
+        [{'text': '✅ Активировать электронную гарантию', 'callback_data': 'flow:registration'}],
+        [{'text': '🛠 Оформить рекламацию', 'callback_data': 'flow:claim'}],
+    ]}
+
+
+def _registered_document_ids(session):
+    registrations = WarrantyProductRegistration.objects.filter(profile__telegram_user_id=session.telegram_user_id)
+    return set(registrations.values_list('label_document_id', flat=True)) | set(registrations.values_list('receipt_document_id', flat=True))
+
+
+def _active_documents(session):
+    return session.documents.exclude(pk__in={value for value in _registered_document_ids(session) if value})
+
+
+def _clear_active_documents(session):
+    _active_documents(session).delete()
+
+
+def _consent_text(config):
+    external_ocr = [name for enabled, name in (
+        (config.ocr_api_key, 'OpenAI'), (config.ocr_space_api_key, 'OCR.space'),
+    ) if enabled]
+    recognition_notice = (
+        f'Для распознавания фотографии могут передаваться сервисам {", ".join(external_ocr)}.\n'
+        if external_ocr else 'Распознавание выполняется локально без передачи фотографий внешним OCR-сервисам.\n'
+    )
+    return (
+        'Чтобы сохранить электронную гарантию и потом оформить обращение без поездки в магазин, '
+        f'нужно ваше согласие на обработку данных.\n\nОператор: {config.personal_data_operator}, '
+        f'{config.personal_data_operator_address}.\nДанные: ФИО, телефон, Telegram ID, фотографии этикетки и чека, '
+        'артикул, серийный номер и дата покупки.\nЦели: регистрация покупки, гарантийное обслуживание и связь по обращению.\n'
+        'Действия: получение, запись, хранение, уточнение, использование и удаление с применением автоматизированных средств.\n' +
+        recognition_notice +
+        f'Согласие действует до достижения целей или отзыва. Отозвать: {config.consent_withdrawal_contact}.\n'
+        f'Политика: {config.privacy_policy_url}\n\nСогласие добровольное. Без него бот не будет сохранять регистрацию.'
+    )
+
+
+def _start_collection(config, session):
+    profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id, consent_version=config.consent_version, consent_revoked_at__isnull=True).first()
+    if profile:
+        session.full_name = profile.full_name
+        session.phone = profile.phone
+    if session.mode == session.Mode.CLAIM and profile and profile.products.exists():
+        session.step = session.Step.PRODUCT
+        session.save()
+        rows = [[{'text': f'{item.article} · {item.serial_number}', 'callback_data': f'claim:product:{item.pk}'}] for item in profile.products.order_by('-activated_at')[:8]]
+        rows.append([{'text': 'Другой товар', 'callback_data': 'claim:product:new'}])
+        _send(config, session, 'Выберите зарегистрированный товар — этикетку и чек повторно присылать не придётся.', reply_markup={'inline_keyboard': rows})
+        return
+    session.step = session.Step.LABEL
+    session.save()
+    action = 'регистрации покупки' if session.mode == session.Mode.REGISTRATION else 'оформления рекламации'
+    _send(config, session, f'Начнём с {action}. Пришлите чёткое фото этикетки на товаре 📷')
+
+
+def _start_flow(config, callback, mode):
+    sender = callback.get('from') or {}
+    message = callback.get('message') or {}
+    session, _ = WarrantyCustomerSession.objects.get_or_create(
+        telegram_user_id=str(sender.get('id')), defaults={'chat_id': str((message.get('chat') or {}).get('id') or sender.get('id'))},
+    )
+    session.chat_id = str((message.get('chat') or {}).get('id') or session.chat_id)
+    session.username = str(sender.get('username') or '')[:255]
+    session.mode = mode
+    _clear_active_documents(session)
+    session.article = session.serial_number = ''
+    session.purchase_date = session.external_claim_id = None
+    session.selected_registration = None
+    session.raw_ocr_data = {}
+    profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id, consent_version=config.consent_version, consent_revoked_at__isnull=True).first()
+    if profile:
+        session.full_name, session.phone = profile.full_name, profile.phone
+        session.save()
+        _start_collection(config, session)
+    else:
+        session.full_name = session.phone = ''
+        session.step = session.Step.CONSENT
+        session.save()
+        _send(config, session, _consent_text(config), reply_markup={'inline_keyboard': [[
+            {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
+            {'text': 'Не согласен', 'callback_data': 'consent:decline'},
+        ]]})
+    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id']})
+
+
+def _accept_consent(config, callback):
+    sender = callback.get('from') or {}
+    session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
+    if session.step != session.Step.CONSENT:
+        _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id']})
+        return
+    text = _consent_text(config)
+    message_id = str(((callback.get('message') or {}).get('message_id')) or '')
+    WarrantyCustomerProfile.objects.update_or_create(
+        telegram_user_id=session.telegram_user_id,
+        defaults={
+            'chat_id': session.chat_id, 'username': session.username,
+            'consent_version': config.consent_version, 'consent_text': text,
+            'consent_message_id': message_id, 'consent_accepted_at': timezone.now(),
+            'consent_revoked_at': None,
+        },
+    )
+    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Спасибо! Согласие сохранено.'})
+    _start_collection(config, session)
+
+
+def _decline_consent(config, callback):
+    sender = callback.get('from') or {}
+    session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
+    session.step = session.Step.MENU
+    session.save(update_fields=('step', 'updated_at'))
+    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Хорошо, данные не сохраняем.'})
+    _send(config, session, 'Без согласия мы не будем собирать данные. Вы можете вернуться в любой момент.', reply_markup=_menu_keyboard())
+
+
+def _select_claim_product(config, callback, registration_id):
+    sender = callback.get('from') or {}
+    session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
+    if registration_id == 'new':
+        session.selected_registration = None
+        session.step = session.Step.LABEL
+        session.save()
+        _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id']})
+        _send(config, session, 'Пришлите чёткое фото этикетки на товаре 📷')
+        return
+    registration = WarrantyProductRegistration.objects.get(
+        pk=int(registration_id), profile__telegram_user_id=session.telegram_user_id,
+        profile__consent_revoked_at__isnull=True,
+    )
+    session.selected_registration = registration
+    session.article = registration.article
+    session.serial_number = registration.serial_number
+    session.purchase_date = registration.purchase_date
+    session.step = session.Step.WARRANTY_CARD
+    session.save()
+    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Товар выбран.'})
+    _send(config, session, 'Нашёл этикетку и чек 👍 Осталось прислать фото гарантийного талона.')
+
+
+@transaction.atomic
+def _activate_registration(config, callback):
+    sender = callback.get('from') or {}
+    session = WarrantyCustomerSession.objects.select_for_update().get(telegram_user_id=str(sender.get('id')))
+    if session.mode != session.Mode.REGISTRATION or session.step != session.Step.READY:
+        _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Сначала заполните данные.'})
+        return
+    profile = WarrantyCustomerProfile.objects.get(telegram_user_id=session.telegram_user_id, consent_version=config.consent_version, consent_revoked_at__isnull=True)
+    profile.chat_id, profile.username = session.chat_id, session.username
+    profile.full_name, profile.phone = session.full_name, session.phone
+    profile.save()
+    active_documents = _active_documents(session)
+    registration, created = WarrantyProductRegistration.objects.get_or_create(
+        profile=profile, serial_number=session.serial_number,
+        defaults={
+            'article': session.article, 'purchase_date': session.purchase_date,
+            'label_document': active_documents.filter(kind='label').order_by('-id').first(),
+            'receipt_document': active_documents.filter(kind='receipt').order_by('-id').first(),
+            'raw_ocr_data': session.raw_ocr_data,
+        },
+    )
+    session.step = session.Step.SUBMITTED
+    session.save(update_fields=('step', 'updated_at'))
+    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Гарантия активирована!'})
+    verb = 'уже была зарегистрирована' if not created else 'активирована'
+    _send(config, session, f'Готово 🎉 Электронная гарантия на {registration.article}, серийный номер {registration.serial_number}, {verb}. Чек сохранён — если понадобится помощь, приезжать для подачи обращения не нужно.', reply_markup=_menu_keyboard())
 
 
 def _save_photo(config, session, message, kind):
@@ -237,20 +411,27 @@ def _handle_message(config, message):
     session.save(update_fields=('chat_id', 'username', 'telegram_message_ids', 'updated_at'))
     text = (message.get('text') or '').strip()
     if text in ('/start', '/new'):
-        session.documents.all().delete()
+        _clear_active_documents(session)
         session.full_name = session.phone = session.article = session.serial_number = ''
         session.purchase_date = session.external_claim_id = None
+        session.selected_registration = None
         session.raw_ocr_data = {}
-        session.step = session.Step.LABEL
+        session.step = session.Step.MENU
         session.save()
-        _send(config, session, config.welcome_text)
+        _send(config, session, f'{config.welcome_text}\n\nЧто хотите сделать?', reply_markup=_menu_keyboard())
         return
     if session.step == session.Step.LABEL and _save_photo(config, session, message, 'label'):
-        session.step = session.Step.WARRANTY_CARD; session.save(); _send(config, session, 'Теперь пришлите фото гарантийного талона.')
+        if session.mode == session.Mode.REGISTRATION:
+            session.step = session.Step.RECEIPT; session.save(); _send(config, session, 'Отлично. Теперь пришлите фото чека 🧾')
+        else:
+            session.step = session.Step.WARRANTY_CARD; session.save(); _send(config, session, 'Теперь пришлите фото гарантийного талона.')
     elif session.step == session.Step.WARRANTY_CARD and _save_photo(config, session, message, 'warranty_card'):
         session.step = session.Step.RECEIPT; session.save(); _send(config, session, 'Пришлите фото чека.')
     elif session.step == session.Step.RECEIPT and _save_photo(config, session, message, 'receipt'):
-        session.step = session.Step.PHONE; session.save(); _send(config, session, 'Укажите номер телефона или поделитесь контактом кнопкой ниже.', reply_markup={'keyboard': [[{'text': 'Поделиться номером', 'request_contact': True}]], 'resize_keyboard': True, 'one_time_keyboard': True})
+        if session.phone and session.full_name:
+            _show_next(config, session)
+        else:
+            session.step = session.Step.PHONE; session.save(); _send(config, session, 'Осталось совсем немного. Поделитесь номером кнопкой ниже или напишите его сообщением.', reply_markup={'keyboard': [[{'text': 'Поделиться номером', 'request_contact': True}]], 'resize_keyboard': True, 'one_time_keyboard': True})
     elif session.step == session.Step.PHONE:
         value = (message.get('contact') or {}).get('phone_number') or text
         phone = _phone(value)
@@ -290,7 +471,13 @@ def _create_claim(config, callback):
             }})
             session.external_claim_id = int(result['id'])
             session.save(update_fields=('external_claim_id', 'updated_at'))
-    for document in session.documents.all():
+    claim_documents = list(_active_documents(session))
+    if session.selected_registration_id:
+        claim_documents.extend(filter(None, (
+            session.selected_registration.label_document,
+            session.selected_registration.receipt_document,
+        )))
+    for document in {item.pk: item for item in claim_documents}.values():
         document.file.open('rb')
         content = document.file.read()
         document.file.close()
@@ -301,6 +488,9 @@ def _create_claim(config, callback):
         }})
     blank = BitrixWarrantyClient().call('claims.blank', {'id': session.external_claim_id})
     session.step = session.Step.SUBMITTED; session.last_error = ''; session.save()
+    WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id, consent_revoked_at__isnull=True).update(
+        chat_id=session.chat_id, username=session.username, full_name=session.full_name, phone=session.phone,
+    )
     _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Рекламация оформлена!'})
     _send(config, session, f'Рекламация №{session.external_claim_id} оформлена. Бланк: {blank["url"]}')
     document_message = _telegram(config, 'sendDocument', {'chat_id': session.chat_id, 'document': blank['url'], 'caption': f'Бланк рекламации №{session.external_claim_id}'})
@@ -322,9 +512,18 @@ def customer_bot_webhook(request):
         update_log, created = WarrantyCustomerUpdate.objects.get_or_create(update_id=update_id)
         if not created:
             return JsonResponse({'ok': True})
-        if update.get('callback_query'): _create_claim(config, update['callback_query'])
+        if update.get('callback_query'):
+            callback = update['callback_query']
+            data = callback.get('data') or ''
+            if data == 'flow:registration': _start_flow(config, callback, WarrantyCustomerSession.Mode.REGISTRATION)
+            elif data == 'flow:claim': _start_flow(config, callback, WarrantyCustomerSession.Mode.CLAIM)
+            elif data == 'consent:accept': _accept_consent(config, callback)
+            elif data == 'consent:decline': _decline_consent(config, callback)
+            elif data.startswith('claim:product:'): _select_claim_product(config, callback, data.rsplit(':', 1)[-1])
+            elif data == 'warranty:activate': _activate_registration(config, callback)
+            elif data == 'warranty:create': _create_claim(config, callback)
         elif update.get('message'): _handle_message(config, update['message'])
-    except (ValueError, KeyError, WarrantyCustomerSession.DoesNotExist):
+    except (ValueError, KeyError, WarrantyCustomerSession.DoesNotExist, WarrantyCustomerProfile.DoesNotExist, WarrantyProductRegistration.DoesNotExist):
         return JsonResponse({'error': 'invalid update'}, status=400)
     except (RuntimeError, BitrixSyncError) as exc:
         if 'update_log' in locals():

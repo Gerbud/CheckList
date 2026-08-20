@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
+from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyProductRegistration, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
 
 for model in (WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramThread, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
     admin.site.register(model)
@@ -14,12 +14,34 @@ admin.site.register(WarrantyCustomerDocument)
 admin.site.register(WarrantyCustomerUpdate)
 
 
+@admin.register(WarrantyCustomerProfile)
+class WarrantyCustomerProfileAdmin(admin.ModelAdmin):
+    list_display = ('full_name', 'phone', 'telegram_user_id', 'consent_version', 'consent_accepted_at', 'consent_revoked_at')
+    search_fields = ('full_name', 'phone', 'telegram_user_id', 'username')
+    readonly_fields = ('telegram_user_id', 'consent_version', 'consent_text', 'consent_message_id', 'consent_accepted_at', 'created_at', 'updated_at')
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(WarrantyProductRegistration)
+class WarrantyProductRegistrationAdmin(admin.ModelAdmin):
+    list_display = ('article', 'serial_number', 'profile', 'purchase_date', 'activated_at')
+    search_fields = ('article', 'serial_number', 'profile__full_name', 'profile__phone')
+    readonly_fields = ('profile', 'article', 'serial_number', 'purchase_date', 'label_document', 'receipt_document', 'raw_ocr_data', 'activated_at')
+
+    def has_add_permission(self, request):
+        return False
+
+
 @admin.register(WarrantyCustomerBotSettings)
 class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
     change_form_template = 'admin/warranty/warrantycustomerbotsettings/change_form.html'
     fields = (
         'bot_token', 'is_enabled',
         'ocr_api_key', 'ocr_model', 'ocr_space_api_key', 'tesseract_command', 'welcome_text',
+        'personal_data_operator', 'personal_data_operator_address', 'privacy_policy_url',
+        'consent_withdrawal_contact', 'consent_version',
         'webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error',
     )
     readonly_fields = ('webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error')

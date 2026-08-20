@@ -60,6 +60,14 @@ class WarrantyCustomerBotSettings(models.Model):
     webhook_url = models.URLField('адрес webhook', blank=True)
     webhook_registered_at = models.DateTimeField('webhook зарегистрирован', null=True, blank=True)
     webhook_last_error = models.TextField('ошибка webhook', blank=True)
+    personal_data_operator = models.CharField('оператор персональных данных', max_length=500, default='ИП Савченко Е.В.')
+    personal_data_operator_address = models.CharField('адрес оператора', max_length=500, default='195176, г. Санкт-Петербург, ул. Апрельская, д. 5')
+    privacy_policy_url = models.URLField('политика обработки данных', default='https://pinel.ru/privacy-policy/')
+    consent_withdrawal_contact = models.CharField('контакт для отзыва согласия', max_length=255, default='service@pinel.ru')
+    consent_version = models.CharField(
+        'версия согласия', max_length=32, default='1.0',
+        help_text='Увеличьте версию при изменении оператора, целей, состава данных или сервисов OCR — бот запросит согласие заново.',
+    )
     welcome_text = models.TextField('приветствие', default='Здравствуйте! Я помогу оформить гарантийное обращение. Пришлите фото этикетки изделия.')
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -79,7 +87,14 @@ class WarrantyCustomerBotSettings(models.Model):
         return super().save(*args, **kwargs)
 
 class WarrantyCustomerSession(models.Model):
+    class Mode(models.TextChoices):
+        CLAIM = 'claim', 'Рекламация'
+        REGISTRATION = 'registration', 'Регистрация покупки'
+
     class Step(models.TextChoices):
+        MENU = 'menu', 'Главное меню'
+        CONSENT = 'consent', 'Согласие на обработку данных'
+        PRODUCT = 'product', 'Выбор зарегистрированного товара'
         LABEL = 'label', 'Фото этикетки'
         WARRANTY_CARD = 'warranty_card', 'Фото гарантийного талона'
         RECEIPT = 'receipt', 'Фото чека'
@@ -94,6 +109,7 @@ class WarrantyCustomerSession(models.Model):
     telegram_user_id = models.CharField(max_length=64, unique=True)
     chat_id = models.CharField(max_length=64)
     username = models.CharField(max_length=255, blank=True)
+    mode = models.CharField(max_length=24, choices=Mode.choices, default=Mode.CLAIM)
     full_name = models.CharField('ФИО', max_length=255, blank=True)
     phone = models.CharField('телефон', max_length=64, blank=True)
     article = models.CharField('артикул', max_length=255, blank=True)
@@ -101,6 +117,7 @@ class WarrantyCustomerSession(models.Model):
     purchase_date = models.DateField('дата покупки', null=True, blank=True)
     step = models.CharField(max_length=32, choices=Step.choices, default=Step.LABEL)
     external_claim_id = models.PositiveBigIntegerField(null=True, blank=True)
+    selected_registration = models.ForeignKey('WarrantyProductRegistration', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     telegram_message_ids = models.JSONField(default=list, blank=True)
     raw_ocr_data = models.JSONField(default=dict, blank=True)
     last_error = models.TextField(blank=True)
@@ -121,6 +138,39 @@ class WarrantyCustomerDocument(models.Model):
     file = models.FileField(upload_to='warranty/customer/%Y/%m/')
     content_type = models.CharField(max_length=128, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class WarrantyCustomerProfile(models.Model):
+    telegram_user_id = models.CharField(max_length=64, unique=True)
+    chat_id = models.CharField(max_length=64)
+    username = models.CharField(max_length=255, blank=True)
+    full_name = models.CharField('ФИО', max_length=255, blank=True)
+    phone = models.CharField('телефон', max_length=64, blank=True)
+    consent_version = models.CharField(max_length=32)
+    consent_text = models.TextField()
+    consent_message_id = models.CharField(max_length=64, blank=True)
+    consent_accepted_at = models.DateTimeField()
+    consent_revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def has_active_consent(self):
+        return self.consent_revoked_at is None
+
+
+class WarrantyProductRegistration(models.Model):
+    profile = models.ForeignKey(WarrantyCustomerProfile, on_delete=models.PROTECT, related_name='products')
+    article = models.CharField('артикул', max_length=255)
+    serial_number = models.CharField('серийный номер', max_length=255)
+    purchase_date = models.DateField('дата покупки')
+    label_document = models.ForeignKey(WarrantyCustomerDocument, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    receipt_document = models.ForeignKey(WarrantyCustomerDocument, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    raw_ocr_data = models.JSONField(default=dict, blank=True)
+    activated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('profile', 'serial_number'), name='unique_registered_product_serial')]
 
 
 class WarrantyCustomerUpdate(models.Model):
