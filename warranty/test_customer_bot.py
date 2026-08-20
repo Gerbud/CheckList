@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _create_claim, _extract_ocr_fields, _handle_support_reply, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _handle_support_reply, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -23,6 +23,15 @@ def test_support_group_id_accepts_number_without_bot_api_prefix():
     assert config.support_api_chat_id == '-1004462669970'
     config.support_group_id = '-1004462669970'
     assert config.support_api_chat_id == '-1004462669970'
+
+
+def test_expired_callback_answer_does_not_break_customer_flow(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    monkeypatch.setattr(
+        'warranty.customer_bot._telegram',
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('query is too old')),
+    )
+    assert _answer_callback(config, {'id': 'expired-callback'}, 'Спасибо!') is None
 
 
 def test_ocr_text_fields_are_extracted():

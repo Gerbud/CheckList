@@ -46,6 +46,18 @@ def _send(config, session, text, **extra):
     return result
 
 
+def _answer_callback(config, callback, text=''):
+    payload = {'callback_query_id': callback['id']}
+    if text:
+        payload['text'] = text
+    try:
+        return _telegram(config, 'answerCallbackQuery', payload)
+    except RuntimeError:
+        # Telegram accepts callback answers only for a short time. The webhook
+        # may be retried after that window, but the customer flow must continue.
+        return None
+
+
 def _remember(session, message_id):
     value = str(message_id or '')
     if value and value not in session.telegram_message_ids:
@@ -409,14 +421,14 @@ def _start_flow(config, callback, mode):
             {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
             {'text': 'Не согласен', 'callback_data': 'consent:decline'},
         ]]})
-    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id']})
+    _answer_callback(config, callback)
 
 
 def _accept_consent(config, callback):
     sender = callback.get('from') or {}
     session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
     if session.step != session.Step.CONSENT:
-        _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id']})
+        _answer_callback(config, callback)
         return
     text = _consent_text(config)
     message_id = str(((callback.get('message') or {}).get('message_id')) or '')
@@ -429,7 +441,7 @@ def _accept_consent(config, callback):
             'consent_revoked_at': None,
         },
     )
-    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Спасибо! Согласие сохранено.'})
+    _answer_callback(config, callback, 'Спасибо! Согласие сохранено.')
     _start_collection(config, session)
 
 
@@ -438,7 +450,7 @@ def _decline_consent(config, callback):
     session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
     session.step = session.Step.MENU
     session.save(update_fields=('step', 'updated_at'))
-    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Хорошо, данные не сохраняем.'})
+    _answer_callback(config, callback, 'Хорошо, данные не сохраняем.')
     _send(config, session, 'Без согласия мы не будем собирать данные. Вы можете вернуться в любой момент.', reply_markup=_menu_keyboard())
 
 
@@ -449,7 +461,7 @@ def _select_claim_product(config, callback, registration_id):
         session.selected_registration = None
         session.step = session.Step.LABEL
         session.save()
-        _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id']})
+        _answer_callback(config, callback)
         _send(config, session, 'Пришлите чёткое фото этикетки на товаре 📷')
         return
     registration = WarrantyProductRegistration.objects.get(
@@ -462,7 +474,7 @@ def _select_claim_product(config, callback, registration_id):
     session.purchase_date = registration.purchase_date
     session.step = session.Step.WARRANTY_CARD
     session.save()
-    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Товар выбран.'})
+    _answer_callback(config, callback, 'Товар выбран.')
     _send(config, session, 'Нашёл этикетку и чек 👍 Осталось прислать фото гарантийного талона.')
 
 
@@ -471,7 +483,7 @@ def _activate_registration(config, callback):
     sender = callback.get('from') or {}
     session = WarrantyCustomerSession.objects.select_for_update().get(telegram_user_id=str(sender.get('id')))
     if session.mode != session.Mode.REGISTRATION or session.step != session.Step.READY:
-        _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Сначала заполните данные.'})
+        _answer_callback(config, callback, 'Сначала заполните данные.')
         return
     profile = WarrantyCustomerProfile.objects.get(telegram_user_id=session.telegram_user_id, consent_version=config.consent_version, consent_revoked_at__isnull=True)
     profile.chat_id, profile.username = session.chat_id, session.username
@@ -489,7 +501,7 @@ def _activate_registration(config, callback):
     )
     session.step = session.Step.SUBMITTED
     session.save(update_fields=('step', 'updated_at'))
-    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Гарантия активирована!'})
+    _answer_callback(config, callback, 'Гарантия активирована!')
     verb = 'уже была зарегистрирована' if not created else 'активирована'
     _send(config, session, f'Готово 🎉 Электронная гарантия на {registration.article}, серийный номер {registration.serial_number}, {verb}. Чек сохранён — если понадобится помощь, приезжать для подачи обращения не нужно.', reply_markup=_menu_keyboard())
 
@@ -576,10 +588,10 @@ def _create_claim(config, callback):
     with transaction.atomic():
         session = WarrantyCustomerSession.objects.select_for_update().get(telegram_user_id=str(sender.get('id')))
         if session.step == session.Step.SUBMITTED:
-            _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Обращение уже оформлено.'})
+            _answer_callback(config, callback, 'Обращение уже оформлено.')
             return
         if session.step != session.Step.READY:
-            _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Сначала заполните все данные.'})
+            _answer_callback(config, callback, 'Сначала заполните все данные.')
             return
         if not session.external_claim_id:
             result = BitrixWarrantyClient().call('claims.create', {'fields': {
@@ -610,7 +622,7 @@ def _create_claim(config, callback):
     WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id, consent_revoked_at__isnull=True).update(
         chat_id=session.chat_id, username=session.username, full_name=session.full_name, phone=session.phone,
     )
-    _telegram(config, 'answerCallbackQuery', {'callback_query_id': callback['id'], 'text': 'Рекламация оформлена!'})
+    _answer_callback(config, callback, 'Рекламация оформлена!')
     _send(config, session, f'Рекламация №{session.external_claim_id} оформлена. Бланк: {blank["url"]}')
     document_message = _telegram(config, 'sendDocument', {'chat_id': session.chat_id, 'document': blank['url'], 'caption': f'Бланк рекламации №{session.external_claim_id}'})
     if isinstance(document_message, dict):
