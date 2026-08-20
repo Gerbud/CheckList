@@ -20,6 +20,14 @@ DRAWING_LINK_RE = re.compile(
     re.IGNORECASE,
 )
 PAGE_RE = re.compile(r'[?&]PAGEN_1=(\d+)')
+# Новая редакция пока открывается напрямую, но ещё не привязана к карточке
+# 2516107 в общем каталоге Greenworks.
+CATALOG_SUPPLEMENTS = {
+    '2516107': [{
+        'url': f'{CATALOG_URL}131524/',
+        'title': '2516107RU Exploded view — дата производства с 01.01.2026',
+    }],
+}
 
 
 def normalize_article(value):
@@ -97,6 +105,9 @@ def refresh_catalog(timeout=30):
         if not changed:
             break
         page_count = page
+    for article, links in CATALOG_SUPPLEMENTS.items():
+        article_links = drawings.setdefault(article, [])
+        article_links.extend(item for item in links if item not in article_links)
     with transaction.atomic():
         GreenworksDrawing.objects.exclude(article__in=drawings).delete()
         for article, links in drawings.items():
