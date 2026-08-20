@@ -138,7 +138,7 @@ def test_telegram_claim_message_has_clickable_product_and_phone(settings):
 
 
 @pytest.mark.django_db
-def test_telegram_claim_message_shows_service_center_location():
+def test_telegram_claim_message_shows_our_location():
     claim = WarrantyClaim.objects.create(
         external_id=90,
         purchased_from_us=False,
@@ -148,7 +148,7 @@ def test_telegram_claim_message_shows_service_center_location():
     message = _claim_message(claim)
 
     assert '<b>Куплено у нас:</b> Нет' in message
-    assert '<b>Товар находится:</b> в сервисном центре' in message
+    assert '<b>Товар находится:</b> у нас' in message
 
 
 @pytest.mark.django_db

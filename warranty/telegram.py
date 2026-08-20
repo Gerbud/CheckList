@@ -146,7 +146,7 @@ def _claim_message(claim):
     product_location = (
         'у клиента'
         if claim.product_remains_with_customer
-        else 'в сервисном центре'
+        else 'у нас'
     )
     status_hashtag = CLAIM_STATUS_HASHTAG.get(
         claim.status, '#статус_неизвестен',
