@@ -325,6 +325,7 @@ def record_warranty_update(update):
     callback_data = str(callback.get('data') or '')
     if callback_data.startswith('warranty:'):
         return _handle_status_callback(callback, callback_data)
+    is_edited = bool(update.get('edited_message'))
     message = update.get('message') or update.get('edited_message') or {}
     chat_id = str((message.get('chat') or {}).get('id') or '')
     topic_id = str(message.get('message_thread_id') or '')
@@ -342,14 +343,15 @@ def record_warranty_update(update):
         str(sender.get('first_name') or '').strip(),
         str(sender.get('last_name') or '').strip(),
     ))) or str(sender.get('username') or '')
-    WarrantyTelegramMessage.objects.update_or_create(
-        thread=thread,
-        telegram_message_id=message_id,
+    message_text = str(message.get('text') or message.get('caption') or '')
+    saved_message, created = WarrantyTelegramMessage.objects.get_or_create(
+        thread=thread, telegram_message_id=message_id,
         defaults={
             'direction': 'inbound',
             'sender_external_id': str(sender.get('id') or ''),
             'sender_name': sender_name[:255],
-            'text': str(message.get('text') or message.get('caption') or ''),
+            'text': message_text,
+            'original_text': message_text,
             'payload': {
                 'message_id': message.get('message_id'),
                 'message_thread_id': message.get('message_thread_id'),
@@ -365,6 +367,14 @@ def record_warranty_update(update):
             },
         },
     )
+    if not created and is_edited:
+        saved_message.text = message_text
+        saved_message.edited_at = timezone.now()
+        saved_message.payload = {
+            **saved_message.payload,
+            'last_edited_message': message,
+        }
+        saved_message.save(update_fields=('text', 'edited_at', 'payload'))
     _save_message_attachments(thread, message)
     return True
 

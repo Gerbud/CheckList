@@ -260,6 +260,31 @@ def test_telegram_document_is_attached_to_topic_claim(monkeypatch, settings, tmp
 
 
 @pytest.mark.django_db
+def test_edited_telegram_message_keeps_original_text():
+    claim = WarrantyClaim.objects.create(external_id=831)
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4571',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    base_message = {
+        'message_id': 791,
+        'message_thread_id': 4571,
+        'chat': {'id': -100123},
+        'from': {'id': 42, 'first_name': 'Иван'},
+        'date': 1_700_000_000,
+    }
+
+    assert record_warranty_update({'message': {**base_message, 'text': 'Первый текст'}}) is True
+    assert record_warranty_update({'edited_message': {**base_message, 'text': 'Исправленный текст'}}) is True
+
+    saved = WarrantyTelegramMessage.objects.get(thread=thread)
+    assert saved.original_text == 'Первый текст'
+    assert saved.text == 'Исправленный текст'
+    assert saved.edited_at is not None
+    assert saved.payload['last_edited_message']['text'] == 'Исправленный текст'
+
+
+@pytest.mark.django_db
 def test_customer_wait_has_seeded_handover_button():
     claim = WarrantyClaim.objects.create(
         external_id=84, status=WarrantyClaim.Status.CUSTOMER_WAIT,

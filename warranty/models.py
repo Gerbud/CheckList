@@ -258,9 +258,16 @@ class WarrantyTelegramMessage(models.Model):
     sender_external_id = models.CharField(max_length=64, blank=True)
     sender_name = models.CharField(max_length=255, blank=True)
     text = models.TextField(blank=True)
+    original_text = models.TextField('исходный текст', blank=True)
     payload = models.JSONField(default=dict, blank=True)
     sent_at = models.DateTimeField(default=timezone.now)
+    edited_at = models.DateTimeField('изменено в Telegram', null=True, blank=True)
 
     class Meta:
         ordering = ('sent_at', 'id')
         constraints = [models.UniqueConstraint(fields=('thread', 'telegram_message_id'), condition=~models.Q(telegram_message_id=''), name='unique_warranty_telegram_message')]
+
+    def save(self, *args, **kwargs):
+        if not self.original_text:
+            self.original_text = self.text
+        super().save(*args, **kwargs)
