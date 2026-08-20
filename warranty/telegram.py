@@ -418,6 +418,19 @@ def record_warranty_update(update):
     message_id = str(message.get('message_id') or '')
     if not chat_id or not topic_id or not message_id:
         return False
+    if message.get('forum_topic_edited') is not None:
+        _, bot = _config()
+        send_telegram_request(
+            'deleteMessage',
+            {
+                'chat_id': chat_id,
+                'message_id': int(message_id),
+            },
+            system_settings=bot,
+            quick=True,
+            retry_on_failure=False,
+        )
+        return True
     thread = WarrantyTelegramThread.objects.filter(
         chat_id=chat_id,
         topic_id=topic_id,

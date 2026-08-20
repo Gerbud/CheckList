@@ -728,6 +728,31 @@ def test_warranty_status_callback_closes_claim_and_queues_bitrix(monkeypatch):
     ]
 
 
+def test_topic_icon_service_message_is_deleted_and_not_recorded(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'send_telegram_request',
+        lambda method, payload, **kwargs: calls.append((method, payload)),
+    )
+
+    result = record_warranty_update({'message': {
+        'message_id': 991,
+        'message_thread_id': 4591,
+        'chat': {'id': -100123},
+        'forum_topic_edited': {'icon_custom_emoji_id': 'new-icon'},
+    }})
+
+    assert result is True
+    assert calls == [('deleteMessage', {
+        'chat_id': '-100123',
+        'message_id': 991,
+    })]
+
+
 @pytest.mark.django_db
 def test_status_change_queues_topic_icon_update():
     actor = User.objects.create_user('icon-admin')
