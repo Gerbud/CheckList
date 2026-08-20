@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _customer_bot_commands, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _save_manually_entered_product_field, _start_product_consultation, _start_support_chat
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _customer_bot_commands, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _resolve_consultation, _route_to_support, _save_manually_entered_product_field, _start_product_consultation, _start_support_chat
 from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -72,6 +72,29 @@ def test_product_consultation_uses_its_own_session_mode(monkeypatch):
     assert session.step == session.Step.CONSULTATION
     assert 'Greenworks' in sent[-1]
     assert '/start' not in sent[-1]
+
+
+def test_resolved_consultation_asks_for_yandex_review(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    callbacks = []
+    sent = []
+    monkeypatch.setattr('warranty.customer_bot._answer_callback', lambda *args: callbacks.append(args[2]))
+    monkeypatch.setattr(
+        'warranty.customer_bot._send',
+        lambda config, session, text, **kwargs: sent.append((session, text, kwargs)),
+    )
+
+    _resolve_consultation(config, {
+        'id': 'resolved-callback', 'from': {'id': 712, 'username': 'buyer'},
+        'message': {'chat': {'id': 713}},
+    })
+
+    assert callbacks == ['Спасибо!']
+    assert sent[0][0].telegram_user_id == '712'
+    assert 'Яндекс Картах' in sent[0][1]
+    assert sent[0][2]['reply_markup']['inline_keyboard'][0][0] == {
+        'text': 'Оставить отзыв ⭐', 'url': 'https://yandex.ru/maps/-/CTsGeI~a',
+    }
 
 
 def test_consultation_message_is_answered_by_openai_not_support(monkeypatch):

@@ -307,6 +307,26 @@ def _consultation_keyboard():
     ]]}
 
 
+def _resolve_consultation(config, callback):
+    sender = callback.get('from') or {}
+    message = callback.get('message') or {}
+    session, _ = WarrantyCustomerSession.objects.get_or_create(
+        telegram_user_id=str(sender.get('id')),
+        defaults={'chat_id': str((message.get('chat') or {}).get('id') or sender.get('id'))},
+    )
+    session.chat_id = str((message.get('chat') or {}).get('id') or session.chat_id)
+    session.save(update_fields=('chat_id', 'updated_at'))
+    _answer_callback(config, callback, 'Спасибо!')
+    _send(
+        config,
+        session,
+        'Рады, что ответ помог! Будем благодарны, если вы поделитесь впечатлениями о Pinel на Яндекс Картах.',
+        reply_markup={'inline_keyboard': [[
+            {'text': 'Оставить отзыв ⭐', 'url': 'https://yandex.ru/maps/-/CTsGeI~a'},
+        ]]},
+    )
+
+
 def _record_consultation(session, question, answer, customer_message_id, sent):
     return WarrantyCustomerConsultationMessage.objects.create(
         session=session, question=question[:4000], answer=answer,
@@ -1219,7 +1239,7 @@ def customer_bot_webhook(request):
             elif data == 'product:consultation': _start_product_consultation(config, callback)
             elif data == 'support:start': _start_support_chat(config, callback)
             elif data == 'consultation:support': _start_support_chat(config, callback)
-            elif data == 'consultation:resolved': _answer_callback(config, callback, 'Отлично! Можете задать следующий вопрос.')
+            elif data == 'consultation:resolved': _resolve_consultation(config, callback)
             elif data == 'consent:accept': _accept_consent(config, callback)
             elif data == 'consent:decline': _decline_consent(config, callback)
             elif data == 'registration:labels:done': _finish_registration_labels(config, callback)
