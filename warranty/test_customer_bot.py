@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -26,6 +26,11 @@ def test_main_menu_has_support_button():
 def test_main_menu_has_greenworks_consultation_button():
     buttons = [button for row in _menu_keyboard()['inline_keyboard'] for button in row]
     assert {'text': '🌿 Подобрать товар Greenworks', 'callback_data': 'product:consultation'} in buttons
+
+
+def test_product_question_is_reduced_to_catalog_keywords():
+    assert _product_search_query('Какой триммер Greenworks выбрать для небольшого участка?') == 'триммер Greenworks'
+    assert _product_search_query('Нужна газонокосилка 40V для 6 соток') == 'газонокосилка 40V Greenworks'
 
 
 def test_product_consultation_uses_its_own_session_mode(monkeypatch):

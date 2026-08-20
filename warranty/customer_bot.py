@@ -167,7 +167,22 @@ def _openai_ocr(config, content, content_type, kind):
 
 
 def _product_search_query(question):
-    value = re.sub(r'[^0-9A-Za-zА-Яа-яЁё+./ -]+', ' ', str(question or ''))
+    value = re.sub(r'[^0-9A-Za-zА-Яа-яЁё+./ -]+', ' ', str(question or '')).strip()
+    categories = (
+        ('триммер', r'\bтриммер\w*'), ('газонокосилка', r'\bгазонокосил\w*'),
+        ('цепная пила', r'\b(?:цепн\w*\s+)?пил\w*'), ('снегоуборщик', r'\bснегоубор\w*'),
+        ('воздуходувка', r'\b(?:воздуходув|листодув)\w*'), ('кусторез', r'\bкусторез\w*'),
+        ('высоторез', r'\bвысоторез\w*'), ('культиватор', r'\bкультиватор\w*'),
+        ('мойка высокого давления', r'\bмойк\w*'), ('аккумулятор', r'\b(?:аккумулятор|акб|батаре)\w*'),
+        ('зарядное устройство', r'\b(?:зарядн\w*|зу)\b'),
+    )
+    category = next((label for label, pattern in categories if re.search(pattern, value, re.I)), '')
+    model = re.search(r'\b(?=[A-ZА-Я0-9-]*\d)[A-ZА-Я0-9][A-ZА-Я0-9./-]{3,}\b', value, re.I)
+    voltage = re.search(r'\b(?:24|40|60|80|82)\s*[VВВ]\b', value, re.I)
+    if model:
+        return model.group(0)[:120]
+    if category:
+        return ' '.join(filter(None, (category, voltage.group(0) if voltage else '', 'Greenworks')))
     value = re.sub(
         r'\b(?:greenworks|гринворкс|посоветуй(?:те)?|подбери(?:те)?|какой|какая|какие|'
         r'нужен|нужна|нужно|товар|модель|купить|для|мне)\b',
