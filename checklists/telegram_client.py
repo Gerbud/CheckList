@@ -21,6 +21,7 @@ GET_METHODS = {
     'getChat',
     'getUpdates',
     'getWebhookInfo',
+    'getFile',
 }
 SUPPORTED_METHODS = {
     'sendMessage',
@@ -39,6 +40,8 @@ SUPPORTED_METHODS = {
     'closeForumTopic',
     'reopenForumTopic',
     'editForumTopic',
+    'deleteForumTopic',
+    'getFile',
 }
 
 
