@@ -34,6 +34,22 @@ def normalize_article(value):
     return re.sub(r'\s+', '', html.unescape(str(value or ''))).upper()
 
 
+def base_article(value):
+    article = normalize_article(value)
+    match = re.fullmatch(r'(\d{5,})(?:[A-Z]{1,3})', article)
+    return match.group(1) if match else article
+
+
+def catalog_article_keys(value):
+    source = html.unescape(str(value or '')).upper()
+    keys = []
+    for token in re.findall(r'[A-Z0-9][A-Z0-9-]*', source):
+        for article in (normalize_article(token), base_article(token)):
+            if article and article not in keys:
+                keys.append(article)
+    return keys
+
+
 def product_article(claim):
     match = ARTICLE_RE.search(claim.product_name or '')
     if match:
@@ -50,8 +66,11 @@ def drawing_links_for_claim(claim):
     article = product_article(claim)
     if not article:
         return []
-    drawing = GreenworksDrawing.objects.filter(article=article).first()
-    return drawing.links if drawing else []
+    candidates = list(dict.fromkeys((article, base_article(article))))
+    links = []
+    for drawing in GreenworksDrawing.objects.filter(article__in=candidates):
+        links.extend(item for item in drawing.links if item not in links)
+    return links
 
 
 def parse_catalog_page(source):
@@ -61,7 +80,7 @@ def parse_catalog_page(source):
         article_match = CARD_ARTICLE_RE.search(card)
         if not article_match:
             continue
-        article = normalize_article(article_match.group(1))
+        articles = catalog_article_keys(article_match.group(1))
         links = []
         for path, title in DRAWING_LINK_RE.findall(card):
             item = {
@@ -71,8 +90,9 @@ def parse_catalog_page(source):
             if item not in links:
                 links.append(item)
         if links:
-            article_links = drawings.setdefault(article, [])
-            article_links.extend(item for item in links if item not in article_links)
+            for article in articles:
+                article_links = drawings.setdefault(article, [])
+                article_links.extend(item for item in links if item not in article_links)
     pages = [int(value) for value in PAGE_RE.findall(source)]
     return drawings, max(pages, default=1)
 

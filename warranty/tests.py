@@ -15,7 +15,7 @@ from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyCla
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, update_claim_topic_message
-from warranty.greenworks import parse_catalog_page
+from warranty.greenworks import base_article, drawing_links_for_claim, parse_catalog_page
 import warranty.telegram as warranty_telegram
 
 
@@ -35,6 +35,34 @@ def test_greenworks_catalog_merges_drawings_for_same_article():
         'https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/16475/',
         'https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/131524/',
     ]
+
+
+def test_greenworks_catalog_splits_articles_and_ignores_kit_suffixes():
+    source = '''
+        <div class="manual-card"><p class="manual-card__code">Артикул 2101507UA, 21107VA</p>
+        <a class="green-link" href="/service/drawings-and-spare-parts-catalogs/8967/" title="G40LT30"></a></div>
+    '''
+
+    drawings, _ = parse_catalog_page(source)
+
+    assert set(drawings) == {'2101507UA', '2101507', '21107VA', '21107'}
+    assert drawings['2101507'][0]['url'].endswith('/8967/')
+    assert base_article('2101507UF') == '2101507'
+    assert base_article('CS2410AA1') == 'CS2410AA1'
+
+
+@pytest.mark.django_db
+def test_greenworks_drawing_lookup_ignores_product_suffix():
+    GreenworksDrawing.objects.create(article='2101507', links=[{
+        'url': 'https://greenworks-service.ru/service/drawings-and-spare-parts-catalogs/8967/',
+        'title': 'G40LT30',
+    }])
+    claim = WarrantyClaim.objects.create(
+        external_id=84,
+        product_name='(арт. 2101507UA) Триммер Greenworks G40LTK2',
+    )
+
+    assert drawing_links_for_claim(claim)[0]['url'].endswith('/8967/')
 
 
 @pytest.mark.django_db
