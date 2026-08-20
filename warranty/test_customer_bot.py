@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _consent_message, _consult_about_product, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_message, _handle_support_reply, _label_confirmation, _menu_keyboard, _next_missing, _openai_ocr, _openai_product_answer, _phone, _product_search_query, _recognize, _request_contacts, _route_to_support, _start_product_consultation, _start_support_chat
 from warranty.models import WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -349,8 +349,16 @@ def test_consent_is_requested_immediately_before_phone(monkeypatch):
     session.refresh_from_db()
     assert session.step == session.Step.CONSENT
     assert 'Согласен ✅' in str(sent[-1][1]['reply_markup'])
+    assert sent[-1][1]['parse_mode'] == 'HTML'
     assert 'Не согласен' not in str(sent[-1][1]['reply_markup'])
     assert 'не согласен' in sent[-1][0]
+
+
+def test_privacy_policy_is_a_named_link_at_bottom_of_consent():
+    config = WarrantyCustomerBotSettings.get_solo()
+    text = _consent_message(config)
+    assert text.endswith('<a href="https://pinel.ru/privacy-policy/">Политика обработки данных</a>')
+    assert 'Политика обработки данных: https://' not in text
 
 
 def test_customer_can_decline_consent_with_text(monkeypatch):

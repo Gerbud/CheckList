@@ -657,17 +657,32 @@ def _consent_text(config):
         f'Для распознавания фотографии могут передаваться сервисам {", ".join(external_ocr)}.\n'
         if external_ocr else 'Распознавание выполняется локально без передачи фотографий внешним OCR-сервисам.\n'
     )
-    text = config.consent_text_template
+    text = html.escape(config.consent_text_template)
     replacements = {
-        '{operator}': config.personal_data_operator,
-        '{operator_address}': config.personal_data_operator_address,
-        '{recognition_notice}': recognition_notice.strip(),
-        '{withdrawal_contact}': config.consent_withdrawal_contact,
-        '{privacy_policy_url}': config.privacy_policy_url,
+        '{operator}': html.escape(config.personal_data_operator),
+        '{operator_address}': html.escape(config.personal_data_operator_address),
+        '{recognition_notice}': html.escape(recognition_notice.strip()),
+        '{withdrawal_contact}': html.escape(config.consent_withdrawal_contact),
+        '{privacy_policy_url}': (
+            f'<a href="{html.escape(config.privacy_policy_url, quote=True)}">'
+            'Политика обработки данных</a>'
+        ),
     }
     for placeholder, value in replacements.items():
         text = text.replace(placeholder, str(value))
     return text.strip()
+
+
+def _consent_message(config):
+    text = _consent_text(config)
+    policy_link = (
+        f'<a href="{html.escape(config.privacy_policy_url, quote=True)}">'
+        'Политика обработки данных</a>'
+    )
+    decline = 'Если вы не согласны, напишите сообщением: «не согласен».'
+    if text.endswith(policy_link):
+        return f'{text[:-len(policy_link)].rstrip()}\n\n{decline}\n\n{policy_link}'
+    return f'{text}\n\n{decline}\n\n{policy_link}'
 
 
 def _ask_for_phone(config, session):
@@ -706,7 +721,8 @@ def _request_contacts(config, session):
     _send(
         config,
         session,
-        _consent_text(config) + '\n\nЕсли вы не согласны, напишите сообщением: «не согласен».',
+        _consent_message(config),
+        parse_mode='HTML',
         reply_markup={'inline_keyboard': [[
             {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
         ]]},
