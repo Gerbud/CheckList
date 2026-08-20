@@ -118,6 +118,10 @@ def import_claim_rows(rows):
     for row in rows:
         external_id = int(row['ID'])
         source_status = _string(row.get('UF_STATUS'))
+        existing_claim = WarrantyClaim.objects.filter(
+            source='bitrix', external_id=external_id,
+        ).only('id', 'status').first()
+        old_status = existing_claim.status if existing_claim else None
         try:
             repair_price = Decimal(_string(row.get('UF_PRICE'))) if row.get('UF_PRICE') not in (None, '') else None
         except InvalidOperation:
@@ -154,9 +158,10 @@ def import_claim_rows(rows):
             claim=claim,
             defaults={'title': f'Гарантия #{external_id}: {claim.product_name}'[:255]},
         )
+        new_history_events = []
         for event in row.get('HISTORY', []):
             event_id = _string(event.get('ID'))
-            WarrantyHistoryEvent.objects.update_or_create(
+            history_event, created = WarrantyHistoryEvent.objects.update_or_create(
                 claim=claim,
                 external_id=event_id,
                 defaults={
@@ -168,6 +173,37 @@ def import_claim_rows(rows):
                     'payload': event,
                 },
             )
+            if created:
+                new_history_events.append(history_event)
+        if old_status is not None and old_status != claim.status:
+            actor_event = new_history_events[-1] if new_history_events else None
+            old_status_label = dict(WarrantyClaim.Status.choices).get(old_status, old_status)
+            WarrantyHistoryEvent.objects.create(
+                claim=claim,
+                kind=WarrantyHistoryEvent.Kind.CHANGE,
+                text=f'Статус: {old_status_label} → {claim.get_status_display()}',
+                actor_external_id=actor_event.actor_external_id if actor_event else '',
+                actor_name=actor_event.actor_name if actor_event else '',
+                occurred_at=actor_event.occurred_at if actor_event else timezone.now(),
+                payload={
+                    'source': 'bitrix_status_sync',
+                    'old_status': old_status,
+                    'new_status': claim.status,
+                    'telegram_notification_pending': True,
+                },
+            )
+            thread = WarrantyTelegramThread.objects.get(claim=claim)
+            if claim.status == WarrantyClaim.Status.CLOSED:
+                thread.state = (
+                    WarrantyTelegramThread.State.CLOSE_PENDING
+                    if thread.topic_id else WarrantyTelegramThread.State.ARCHIVED
+                )
+            elif old_status == WarrantyClaim.Status.CLOSED:
+                thread.state = WarrantyTelegramThread.State.RESTORE_PENDING
+                thread.archived_at = None
+            elif thread.topic_id:
+                thread.state = WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
+            thread.save()
         for attachment in row.get('FILES', []):
             WarrantyAttachment.objects.update_or_create(
                 claim=claim,

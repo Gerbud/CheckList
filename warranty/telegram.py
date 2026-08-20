@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from checklists.models import TelegramSystemSettings
 from checklists.telegram_client import OFFICIAL_API_BASE_URL, TelegramAPIError, send_telegram_request
-from warranty.models import WarrantyAttachment, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
+from warranty.models import WarrantyAttachment, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 
 
 TOPIC_STATUS_EMOJI = {
@@ -549,6 +549,59 @@ def reopen_claim_topic(thread):
     return thread
 
 
+def send_pending_bitrix_status_notifications(thread, *, bot=None):
+    events = thread.claim.history.filter(
+        payload__source='bitrix_status_sync',
+        payload__telegram_notification_pending=True,
+    ).order_by('occurred_at', 'id')
+    if not events.exists():
+        return 0
+    warranty, configured_bot = _config()
+    bot = bot or configured_bot
+    status_labels = dict(thread.claim.Status.choices)
+    sent = 0
+    for event in events:
+        old_status = status_labels.get(event.payload.get('old_status'), event.payload.get('old_status') or '—')
+        new_status = status_labels.get(event.payload.get('new_status'), event.payload.get('new_status') or '—')
+        actor_name = event.actor_name or (
+            f'Пользователь Bitrix ID {event.actor_external_id}'
+            if event.actor_external_id else 'Неизвестный пользователь Bitrix'
+        )
+        notification_text = (
+            f'🔄 Статус изменён в Bitrix\n'
+            f'{old_status} → {new_status}\n'
+            f'Изменил: {actor_name}'
+        )
+        response = send_telegram_request(
+            'sendMessage',
+            {
+                'chat_id': warranty.chat_id,
+                'message_thread_id': int(thread.topic_id),
+                'text': notification_text,
+            },
+            system_settings=bot,
+            quick=True,
+            retry_on_failure=False,
+        )
+        result = response.data.get('result') or {}
+        WarrantyTelegramMessage.objects.create(
+            thread=thread,
+            telegram_message_id=str(result.get('message_id') or ''),
+            direction='outbound',
+            sender_external_id=event.actor_external_id,
+            sender_name=actor_name[:255],
+            text=notification_text,
+            payload=result if isinstance(result, dict) else {},
+        )
+        payload = dict(event.payload)
+        payload['telegram_notification_pending'] = False
+        payload['telegram_message_id'] = str(result.get('message_id') or '')
+        event.payload = payload
+        event.save(update_fields=('payload',))
+        sent += 1
+    return sent
+
+
 def sync_warranty_topics(limit=50):
     results = {'created': 0, 'closed': 0, 'reopened': 0, 'updated': 0, 'failed': 0, 'rate_limited': 0}
     query = WarrantyTelegramThread.objects.select_related('claim').filter(
@@ -570,12 +623,15 @@ def sync_warranty_topics(limit=50):
                 create_claim_topic(thread)
                 results['created'] += 1
             elif thread.state == WarrantyTelegramThread.State.CLOSE_PENDING:
+                send_pending_bitrix_status_notifications(thread)
                 close_claim_topic(thread)
                 results['closed'] += 1
             elif thread.state == WarrantyTelegramThread.State.RESTORE_PENDING:
                 reopen_claim_topic(thread)
+                send_pending_bitrix_status_notifications(thread)
                 results['reopened'] += 1
             else:
+                send_pending_bitrix_status_notifications(thread)
                 update_claim_topic_icon(thread)
                 update_claim_topic_message(thread)
                 thread.state = WarrantyTelegramThread.State.ACTIVE

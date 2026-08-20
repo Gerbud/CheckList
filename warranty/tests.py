@@ -12,6 +12,7 @@ from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
 from warranty.admin import WarrantyTelegramSettingsAdmin
 from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
+from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update, update_claim_topic_message
 import warranty.telegram as warranty_telegram
@@ -497,6 +498,69 @@ def test_status_change_queues_topic_icon_update():
 
     thread.refresh_from_db()
     assert thread.state == WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
+
+
+@pytest.mark.django_db
+def test_bitrix_status_change_notifies_topic_with_actor(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=860, source='bitrix', source_status='1',
+        status=WarrantyClaim.Status.NEW,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='4590',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    import_claim_rows([{
+        'ID': 860,
+        'UF_STATUS': '4',
+        'HISTORY': [{
+            'ID': 701,
+            'UF_CHANGES': 'Изменён статус',
+            'UF_USER_ID': '42',
+            'ACTOR_NAME': 'Анна Смирнова',
+            'UF_DATE': '2026-08-20T12:00:00+03:00',
+        }],
+    }])
+    calls = []
+
+    def fake_send(method, payload, **kwargs):
+        calls.append((method, payload))
+        if method == 'sendMessage':
+            return SimpleNamespace(data={'result': {'message_id': 990}})
+        if method == 'getForumTopicIconStickers':
+            return SimpleNamespace(data={'result': [
+                {'emoji': '🛠', 'custom_emoji_id': 'work-icon'},
+            ]})
+        return SimpleNamespace(data={'result': True})
+
+    warranty_telegram._forum_topic_icons.cache_clear()
+    monkeypatch.setattr(
+        warranty_telegram, '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'send_telegram_request', fake_send)
+
+    result = warranty_telegram.sync_warranty_topics()
+
+    thread.refresh_from_db()
+    event = WarrantyHistoryEvent.objects.get(
+        claim=claim, payload__source='bitrix_status_sync',
+    )
+    message = WarrantyTelegramMessage.objects.get(thread=thread)
+    assert result['updated'] == 1
+    assert thread.state == WarrantyTelegramThread.State.ACTIVE
+    assert message.telegram_message_id == '990'
+    assert message.sender_external_id == '42'
+    assert message.sender_name == 'Анна Смирнова'
+    assert 'Новый → В работе' in message.text
+    assert 'Изменил: Анна Смирнова' in message.text
+    assert event.payload['telegram_notification_pending'] is False
+    assert event.payload['telegram_message_id'] == '990'
+    assert calls[0] == ('sendMessage', {
+        'chat_id': '-100123',
+        'message_thread_id': 4590,
+        'text': message.text,
+    })
 
 
 @pytest.mark.django_db
