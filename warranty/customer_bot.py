@@ -322,7 +322,7 @@ def _resolve_consultation(config, callback):
         session,
         'Рады, что ответ помог! Будем благодарны, если вы поделитесь впечатлениями о Pinel на Яндекс Картах.',
         reply_markup={'inline_keyboard': [[
-            {'text': 'Оставить отзыв ⭐', 'url': 'https://yandex.ru/maps/-/CTsGeI~a'},
+            {'text': 'Оставить отзыв ⭐', 'url': config.yandex_review_url},
         ]]},
     )
 

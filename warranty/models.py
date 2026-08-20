@@ -108,6 +108,11 @@ class WarrantyCustomerBotSettings(models.Model):
         ),
     )
     product_consultation_enabled = models.BooleanField('консультации по товарам включены', default=True)
+    yandex_review_url = models.URLField(
+        'ссылка для отзыва на Яндекс Картах',
+        default='https://yandex.ru/maps/-/CTsGeI~a',
+        help_text='Показывается клиенту после нажатия «Ответ помог».',
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

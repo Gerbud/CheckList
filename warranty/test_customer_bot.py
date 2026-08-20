@@ -76,6 +76,7 @@ def test_product_consultation_uses_its_own_session_mode(monkeypatch):
 
 def test_resolved_consultation_asks_for_yandex_review(monkeypatch):
     config = WarrantyCustomerBotSettings.get_solo()
+    config.yandex_review_url = 'https://yandex.ru/maps/org/example/reviews/'
     callbacks = []
     sent = []
     monkeypatch.setattr('warranty.customer_bot._answer_callback', lambda *args: callbacks.append(args[2]))
@@ -93,7 +94,7 @@ def test_resolved_consultation_asks_for_yandex_review(monkeypatch):
     assert sent[0][0].telegram_user_id == '712'
     assert 'Яндекс Картах' in sent[0][1]
     assert sent[0][2]['reply_markup']['inline_keyboard'][0][0] == {
-        'text': 'Оставить отзыв ⭐', 'url': 'https://yandex.ru/maps/-/CTsGeI~a',
+        'text': 'Оставить отзыв ⭐', 'url': config.yandex_review_url,
     }
 
 
@@ -381,13 +382,14 @@ def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
             'bot_token': 'new-token', 'is_enabled': 'on', 'ocr_api_key': '',
             'ocr_model': 'gpt-4.1-mini', 'ocr_space_api_key': '',
             'tesseract_command': 'tesseract', 'welcome_text': 'Здравствуйте!',
-            'personal_data_operator': 'ИП Тест', 'personal_data_operator_address': 'Москва',
+                'personal_data_operator': 'ИП Тест', 'personal_data_operator_address': 'Москва',
                 'privacy_policy_url': 'https://example.com/privacy/',
                 'consent_withdrawal_contact': 'privacy@example.com', 'consent_version': '1.0',
                 'consent_text_template': config.consent_text_template,
+                'yandex_review_url': config.yandex_review_url,
                 '_register_webhook': 'Создать webhook',
-        },
-    )
+            },
+        )
     assert response.status_code == 302
     config.refresh_from_db()
     assert not config.webhook_secret_token.startswith('http')

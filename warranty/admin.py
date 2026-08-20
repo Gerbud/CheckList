@@ -42,7 +42,7 @@ class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
     change_form_template = 'admin/warranty/warrantycustomerbotsettings/change_form.html'
     fields = (
         'bot_token', 'is_enabled', 'support_group_id',
-        'ocr_api_key', 'ocr_model', 'product_consultation_enabled',
+        'ocr_api_key', 'ocr_model', 'product_consultation_enabled', 'yandex_review_url',
         'ocr_space_api_key', 'tesseract_command', 'welcome_text',
         'personal_data_operator', 'personal_data_operator_address', 'privacy_policy_url',
         'consent_withdrawal_contact', 'consent_version', 'consent_text_template',
