@@ -366,16 +366,56 @@ def _consent_text(config):
         f'Для распознавания фотографии могут передаваться сервисам {", ".join(external_ocr)}.\n'
         if external_ocr else 'Распознавание выполняется локально без передачи фотографий внешним OCR-сервисам.\n'
     )
-    return (
-        'Чтобы сохранить электронную гарантию и потом оформить обращение без поездки в магазин, '
-        f'нужно ваше согласие на обработку данных.\n\nОператор: {config.personal_data_operator}, '
-        f'{config.personal_data_operator_address}.\nДанные: ФИО, телефон, Telegram ID, фотографии этикетки и чека, '
-        'артикул, серийный номер и дата покупки.\nЦели: регистрация покупки, гарантийное обслуживание и связь по обращению.\n'
-        'Действия: получение, запись, хранение, уточнение, использование и удаление с применением автоматизированных средств.\n' +
-        recognition_notice +
-        f'Согласие действует до достижения целей или отзыва. Отозвать: {config.consent_withdrawal_contact}.\n'
-        f'Политика: {config.privacy_policy_url}\n\nСогласие добровольное. Без него бот не будет сохранять регистрацию.'
+    text = config.consent_text_template
+    replacements = {
+        '{operator}': config.personal_data_operator,
+        '{operator_address}': config.personal_data_operator_address,
+        '{recognition_notice}': recognition_notice.strip(),
+        '{withdrawal_contact}': config.consent_withdrawal_contact,
+        '{privacy_policy_url}': config.privacy_policy_url,
+    }
+    for placeholder, value in replacements.items():
+        text = text.replace(placeholder, str(value))
+    return text.strip()
+
+
+def _ask_for_phone(config, session):
+    session.step = session.Step.PHONE
+    session.save(update_fields=('step', 'updated_at'))
+    _send(
+        config, session,
+        'Спасибо! Теперь поделитесь номером телефона кнопкой ниже — так быстрее и без ошибок.',
+        reply_markup={
+            'keyboard': [[{'text': 'Поделиться номером телефона 📱', 'request_contact': True}]],
+            'resize_keyboard': True, 'one_time_keyboard': True,
+        },
     )
+
+
+def _request_contacts(config, session):
+    profile = WarrantyCustomerProfile.objects.filter(
+        telegram_user_id=session.telegram_user_id,
+        consent_version=config.consent_version,
+        consent_revoked_at__isnull=True,
+    ).first()
+    if profile:
+        session.full_name = profile.full_name
+        session.phone = profile.phone
+        if session.full_name and session.phone:
+            _show_next(config, session)
+        elif session.phone:
+            session.step = session.Step.FULL_NAME
+            session.save()
+            _send(config, session, 'Осталось указать ФИО полностью.', reply_markup={'remove_keyboard': True})
+        else:
+            _ask_for_phone(config, session)
+        return
+    session.step = session.Step.CONSENT
+    session.save(update_fields=('step', 'updated_at'))
+    _send(config, session, _consent_text(config), reply_markup={'inline_keyboard': [[
+        {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
+        {'text': 'Не согласен', 'callback_data': 'consent:decline'},
+    ]]})
 
 
 def _start_collection(config, session):
@@ -410,19 +450,9 @@ def _start_flow(config, callback, mode):
     session.purchase_date = session.external_claim_id = None
     session.selected_registration = None
     session.raw_ocr_data = {}
-    profile = WarrantyCustomerProfile.objects.filter(telegram_user_id=session.telegram_user_id, consent_version=config.consent_version, consent_revoked_at__isnull=True).first()
-    if profile:
-        session.full_name, session.phone = profile.full_name, profile.phone
-        session.save()
-        _start_collection(config, session)
-    else:
-        session.full_name = session.phone = ''
-        session.step = session.Step.CONSENT
-        session.save()
-        _send(config, session, _consent_text(config), reply_markup={'inline_keyboard': [[
-            {'text': 'Согласен ✅', 'callback_data': 'consent:accept'},
-            {'text': 'Не согласен', 'callback_data': 'consent:decline'},
-        ]]})
+    session.full_name = session.phone = ''
+    session.save()
+    _start_collection(config, session)
     _answer_callback(config, callback)
 
 
@@ -444,7 +474,7 @@ def _accept_consent(config, callback):
         },
     )
     _answer_callback(config, callback, 'Спасибо! Согласие сохранено.')
-    _start_collection(config, session)
+    _ask_for_phone(config, session)
 
 
 def _decline_consent(config, callback):
@@ -452,6 +482,7 @@ def _decline_consent(config, callback):
     session = WarrantyCustomerSession.objects.get(telegram_user_id=str(sender.get('id')))
     session.step = session.Step.MENU
     session.save(update_fields=('step', 'updated_at'))
+    _clear_active_documents(session)
     _answer_callback(config, callback, 'Хорошо, данные не сохраняем.')
     _send(config, session, 'Без согласия мы не будем собирать данные. Вы можете вернуться в любой момент.', reply_markup=_menu_keyboard())
 
@@ -680,17 +711,12 @@ def _handle_message(config, message):
             session.save()
             _send(config, session, _label_confirmation(session))
     elif session.step == session.Step.WARRANTY_CARD and _save_photo(config, session, message, 'warranty_card'):
-        if session.phone and session.full_name:
-            _show_next(config, session)
-        else:
-            session.step = session.Step.PHONE; session.save(); _send(config, session, 'Осталось совсем немного. Поделитесь номером кнопкой ниже или напишите его сообщением.', reply_markup={'keyboard': [[{'text': 'Поделиться номером', 'request_contact': True}]], 'resize_keyboard': True, 'one_time_keyboard': True})
+        _request_contacts(config, session)
     elif session.step == session.Step.RECEIPT and _save_photo(config, session, message, 'receipt'):
         if session.mode == session.Mode.CLAIM:
             session.step = session.Step.WARRANTY_CARD; session.save(); _send(config, session, 'Чек получил. Теперь пришлите фото гарантийного талона.')
-        elif session.phone and session.full_name:
-            _show_next(config, session)
         else:
-            session.step = session.Step.PHONE; session.save(); _send(config, session, 'Осталось совсем немного. Поделитесь номером кнопкой ниже или напишите его сообщением.', reply_markup={'keyboard': [[{'text': 'Поделиться номером', 'request_contact': True}]], 'resize_keyboard': True, 'one_time_keyboard': True})
+            _request_contacts(config, session)
     elif session.step == session.Step.PHONE:
         value = (message.get('contact') or {}).get('phone_number') or text
         phone = _phone(value)

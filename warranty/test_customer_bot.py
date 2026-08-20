@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_support_reply, _label_confirmation, _next_missing, _openai_ocr, _phone, _recognize, _route_to_support
+from warranty.customer_bot import OpenAIModelUnavailable, _accept_consent, _activate_registration, _answer_callback, _create_claim, _extract_ocr_fields, _finish_registration_labels, _handle_support_reply, _label_confirmation, _next_missing, _openai_ocr, _phone, _recognize, _request_contacts, _route_to_support
 from warranty.models import WarrantyCustomerBotSettings, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyProductRegistration
 
 
@@ -114,6 +114,7 @@ def test_customer_bot_admin_has_webhook_buttons(client):
     assert 'Создать webhook' in response.content.decode()
     assert 'Проверить webhook' in response.content.decode()
     assert '<select name="ocr_model"' in response.content.decode()
+    assert 'name="consent_text_template"' in response.content.decode()
 
 
 def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
@@ -132,9 +133,10 @@ def test_register_webhook_replaces_legacy_secret(client, monkeypatch):
             'ocr_model': 'gpt-4.1-mini', 'ocr_space_api_key': '',
             'tesseract_command': 'tesseract', 'welcome_text': 'Здравствуйте!',
             'personal_data_operator': 'ИП Тест', 'personal_data_operator_address': 'Москва',
-            'privacy_policy_url': 'https://example.com/privacy/',
-            'consent_withdrawal_contact': 'privacy@example.com', 'consent_version': '1.0',
-            '_register_webhook': 'Создать webhook',
+                'privacy_policy_url': 'https://example.com/privacy/',
+                'consent_withdrawal_contact': 'privacy@example.com', 'consent_version': '1.0',
+                'consent_text_template': config.consent_text_template,
+                '_register_webhook': 'Создать webhook',
         },
     )
     assert response.status_code == 302
@@ -160,7 +162,24 @@ def test_consent_is_saved_with_version_text_and_telegram_evidence(monkeypatch):
     assert profile.consent_message_id == '701'
     assert config.personal_data_operator in profile.consent_text
     assert profile.consent_accepted_at is not None
-    assert session.step == session.Step.LABEL
+    assert session.step == session.Step.PHONE
+
+
+def test_consent_is_requested_immediately_before_phone(monkeypatch):
+    config = WarrantyCustomerBotSettings.get_solo()
+    session = WarrantyCustomerSession.objects.create(
+        telegram_user_id='505', chat_id='605', mode=WarrantyCustomerSession.Mode.REGISTRATION,
+        step=WarrantyCustomerSession.Step.RECEIPT,
+    )
+    sent = []
+    monkeypatch.setattr(
+        'warranty.customer_bot._send',
+        lambda config, session, text, **kwargs: sent.append((text, kwargs)),
+    )
+    _request_contacts(config, session)
+    session.refresh_from_db()
+    assert session.step == session.Step.CONSENT
+    assert 'Согласен ✅' in str(sent[-1][1]['reply_markup'])
 
 
 def test_purchase_registration_is_idempotent(monkeypatch):

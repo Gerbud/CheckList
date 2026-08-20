@@ -43,7 +43,7 @@ class WarrantyCustomerBotSettingsAdmin(admin.ModelAdmin):
         'bot_token', 'is_enabled', 'support_group_id',
         'ocr_api_key', 'ocr_model', 'ocr_space_api_key', 'tesseract_command', 'welcome_text',
         'personal_data_operator', 'personal_data_operator_address', 'privacy_policy_url',
-        'consent_withdrawal_contact', 'consent_version',
+        'consent_withdrawal_contact', 'consent_version', 'consent_text_template',
         'webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error',
     )
     readonly_fields = ('webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error')
