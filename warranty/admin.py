@@ -2,8 +2,13 @@ from django.contrib import admin
 
 from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread, WarrantyWorkItem
 
-for model in (WarrantyClaim, WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramSettings, WarrantyTelegramThread, WarrantyTelegramMessage, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
+for model in (WarrantyClaim, WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramThread, WarrantyTelegramMessage, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
     admin.site.register(model)
+
+
+@admin.register(WarrantyTelegramSettings)
+class WarrantyTelegramSettingsAdmin(admin.ModelAdmin):
+    fields = ('peer_id', 'use_forum_topics', 'is_enabled')
 
 
 @admin.register(WarrantyTelegramStatusButton)

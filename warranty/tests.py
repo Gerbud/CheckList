@@ -3,16 +3,26 @@ from io import StringIO
 from types import SimpleNamespace
 
 import pytest
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.urls import reverse
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
+from warranty.admin import WarrantyTelegramSettingsAdmin
 from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update
 import warranty.telegram as warranty_telegram
+
+
+def test_warranty_telegram_settings_admin_only_shows_peer_id():
+    model_admin = WarrantyTelegramSettingsAdmin(WarrantyTelegramSettings, AdminSite())
+
+    assert model_admin.get_fields(None) == (
+        'peer_id', 'use_forum_topics', 'is_enabled',
+    )
 
 
 @pytest.mark.django_db
