@@ -6,17 +6,69 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from warranty.models import WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyProductRegistration, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
+from warranty.models import WarrantyActivity, WarrantyAttachment, WarrantyBitrixOutbox, WarrantyBitrixSyncState, WarrantyClaim, WarrantyCustomerBotSettings, WarrantyCustomerConsultationMessage, WarrantyCustomerDocument, WarrantyCustomerProfile, WarrantyCustomerSession, WarrantyCustomerSupportMessage, WarrantyCustomerSupportThread, WarrantyCustomerUpdate, WarrantyHistoryEvent, WarrantyProductRegistration, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread, WarrantyWorkItem
 
-for model in (WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem, WarrantyTelegramThread, WarrantyBitrixOutbox, WarrantyBitrixSyncState):
-    admin.site.register(model)
 
-admin.site.register(WarrantyCustomerSession)
-admin.site.register(WarrantyCustomerDocument)
-admin.site.register(WarrantyCustomerUpdate)
-admin.site.register(WarrantyCustomerSupportThread)
-admin.site.register(WarrantyCustomerSupportMessage)
-admin.site.register(WarrantyCustomerConsultationMessage)
+class HiddenTechnicalAdmin(admin.ModelAdmin):
+    """Keep support URLs available while removing technical tables from the menu."""
+
+    def get_model_perms(self, request):
+        return {}
+
+
+for model in (
+    WarrantyAttachment, WarrantyHistoryEvent, WarrantyWorkItem,
+    WarrantyTelegramThread, WarrantyBitrixOutbox, WarrantyBitrixSyncState,
+    WarrantyCustomerSession, WarrantyCustomerDocument, WarrantyCustomerUpdate,
+    WarrantyCustomerSupportThread, WarrantyCustomerSupportMessage,
+    WarrantyCustomerConsultationMessage,
+):
+    admin.site.register(model, HiddenTechnicalAdmin)
+
+
+def activity_rows(claim):
+    rows = [
+        (event.occurred_at, event.get_kind_display(), event.actor_name, event.text)
+        for event in claim.history.all()
+    ]
+    thread = getattr(claim, 'telegram_thread', None)
+    if thread:
+        rows.extend(
+            (
+                message.sent_at,
+                'Telegram · ' + message.get_direction_display(),
+                message.sender_name,
+                message.text or '[сообщение без текста]',
+            )
+            for message in thread.messages.all()
+        )
+    rows.extend(
+        (item.created_at, 'Синхронизация', '', item.last_error or item.get_status_display())
+        for item in claim.bitrix_outbox.all()
+        if item.status == WarrantyBitrixOutbox.Status.ERROR
+    )
+    return sorted(rows, key=lambda row: (row[0], row[1]), reverse=True)
+
+
+def render_activity(claim):
+    rows = activity_rows(claim)
+    if not rows:
+        return 'История пока пуста.'
+    return format_html_join(
+        '',
+        '<section style="margin:0 0 10px;padding:12px 14px;border-left:4px solid #417690;'
+        'border-radius:4px;background:var(--darkened-bg,#f8f8f8)">'
+        '<div style="display:flex;gap:10px;justify-content:space-between">'
+        '<strong>{}</strong><time style="white-space:nowrap;color:var(--body-quiet-color,#666)">{}</time>'
+        '</div><div style="margin-top:5px;white-space:pre-wrap">{}</div>{}</section>',
+        ((
+            label,
+            timezone.localtime(occurred_at).strftime('%d.%m.%Y %H:%M'),
+            text,
+            format_html('<small style="color:var(--body-quiet-color,#666)">{}</small>', actor)
+            if actor else '',
+        ) for occurred_at, label, actor, text in rows),
+    )
 
 
 @admin.register(WarrantyCustomerProfile)
@@ -112,7 +164,11 @@ class WarrantyClaimAdmin(admin.ModelAdmin):
     list_display = ('external_id', 'customer_name', 'product_name', 'status', 'updated_at')
     search_fields = ('=external_id', 'customer_name', 'phone', 'product_name', 'serial_number')
     list_filter = ('status', 'priority', 'warranty_type')
-    readonly_fields = ('telegram_correspondence',)
+    readonly_fields = ('work_history',)
+
+    @admin.display(description='Единая история работы')
+    def work_history(self, obj):
+        return render_activity(obj) if obj else 'История появится после сохранения.'
 
     @admin.display(description='Переписка в Telegram')
     def telegram_correspondence(self, obj):
@@ -136,6 +192,46 @@ class WarrantyClaimAdmin(admin.ModelAdmin):
         )
 
 
+@admin.register(WarrantyActivity)
+class WarrantyActivityAdmin(admin.ModelAdmin):
+    list_display = ('claim_number', 'customer_name', 'product_name', 'status', 'updated_at')
+    list_filter = ('status',)
+    search_fields = ('=external_id', 'customer_name', 'phone', 'product_name', 'serial_number')
+    ordering = ('-updated_at',)
+    fields = ('claim_link', 'customer_name', 'product_name', 'status', 'work_history')
+    readonly_fields = fields
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related(
+            'history', 'bitrix_outbox', 'telegram_thread__messages',
+        )
+
+    @admin.display(description='Обращение', ordering='external_id')
+    def claim_number(self, obj):
+        url = reverse('admin:warranty_warrantyclaim_change', args=(obj.pk,))
+        return format_html('<a href="{}">#{}</a>', url, obj.external_id)
+
+    @admin.display(description='Карточка обращения')
+    def claim_link(self, obj):
+        return self.claim_number(obj)
+
+    @admin.display(description='Хронология')
+    def work_history(self, obj):
+        return render_activity(obj)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm('warranty.view_warrantyclaim')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(WarrantyTelegramMessage)
 class WarrantyTelegramMessageAdmin(admin.ModelAdmin):
     list_display = ('claim_number', 'sent_at', 'direction', 'sender_name', 'telegram_message_id', 'edited_at')
@@ -143,6 +239,9 @@ class WarrantyTelegramMessageAdmin(admin.ModelAdmin):
     search_fields = ('thread__claim__external_id', 'sender_name', 'telegram_message_id', 'text', 'original_text')
     readonly_fields = ('thread', 'telegram_message_id', 'direction', 'sender_external_id', 'sender_name', 'text', 'original_text', 'payload', 'sent_at', 'edited_at')
     ordering = ('-sent_at', '-id')
+
+    def get_model_perms(self, request):
+        return {}
 
     @admin.display(description='Обращение', ordering='thread__claim__external_id')
     def claim_number(self, obj):

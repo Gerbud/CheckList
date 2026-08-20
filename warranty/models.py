@@ -221,6 +221,13 @@ class WarrantyCustomerProfile(models.Model):
     def has_active_consent(self):
         return self.consent_revoked_at is None
 
+    def __str__(self):
+        return self.full_name or self.phone or f'Telegram {self.telegram_user_id}'
+
+    class Meta:
+        verbose_name = 'клиент гарантийного отдела'
+        verbose_name_plural = 'клиенты'
+
 
 class WarrantyProductRegistration(models.Model):
     profile = models.ForeignKey(WarrantyCustomerProfile, on_delete=models.PROTECT, related_name='products')
@@ -233,7 +240,12 @@ class WarrantyProductRegistration(models.Model):
     activated_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        verbose_name = 'зарегистрированный товар'
+        verbose_name_plural = 'зарегистрированные товары'
         constraints = [models.UniqueConstraint(fields=('profile', 'serial_number'), name='unique_registered_product_serial')]
+
+    def __str__(self):
+        return f'{self.article} · {self.serial_number}'
 
 
 class WarrantyCustomerUpdate(models.Model):
@@ -334,6 +346,8 @@ class WarrantyClaim(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = 'гарантийное обращение'
+        verbose_name_plural = 'обращения'
         ordering = ('-source_created_at', '-external_id')
         constraints = [models.UniqueConstraint(fields=('source', 'external_id'), name='unique_warranty_claim_source_id')]
         indexes = [models.Index(fields=('status', 'priority')), models.Index(fields=('phone',)), models.Index(fields=('serial_number',))]
@@ -351,6 +365,15 @@ class WarrantyClaim(models.Model):
 
     def __str__(self):
         return f'#{self.external_id} {self.product_name or self.customer_name}'
+
+
+class WarrantyActivity(WarrantyClaim):
+    """Read-only admin view that groups all claim events into one timeline."""
+
+    class Meta:
+        proxy = True
+        verbose_name = 'история обращения'
+        verbose_name_plural = 'история работы'
 
 
 class GreenworksDrawing(models.Model):

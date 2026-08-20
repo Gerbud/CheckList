@@ -8,15 +8,15 @@ from types import SimpleNamespace
 
 import pytest
 from django.contrib.admin.sites import AdminSite
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.admin import WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin, WarrantyTelegramStatusIconAdmin
-from warranty.models import GreenworksDrawing, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
+from warranty.admin import HiddenTechnicalAdmin, WarrantyActivityAdmin, WarrantyTelegramSettingsAdmin, WarrantyTelegramStatusButtonAdmin, WarrantyTelegramStatusIconAdmin, activity_rows
+from warranty.models import GreenworksDrawing, WarrantyActivity, WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramStatusIcon, WarrantyTelegramThread
 from warranty.bitrix_sync import import_claim_rows
 from warranty.services import update_claim
 from warranty.telegram import _claim_message, _status_keyboard, delete_expired_claim_topics, record_warranty_update, refresh_claim_buttons_for_statuses, refresh_claim_topic_icons_for_statuses, update_claim_topic_message
@@ -1253,3 +1253,45 @@ def test_already_current_topic_icon_is_success(monkeypatch):
     thread.refresh_from_db()
     assert result['updated'] == 1
     assert thread.state == WarrantyTelegramThread.State.ACTIVE
+
+
+def test_technical_warranty_models_are_hidden_from_admin_index(rf):
+    model_admin = HiddenTechnicalAdmin(WarrantyHistoryEvent, AdminSite())
+
+    assert model_admin.get_model_perms(rf.get('/admin/')) == {}
+
+
+def test_activity_rows_combine_work_events_and_only_relevant_system_errors(db):
+    claim = WarrantyClaim.objects.create(external_id=9876)
+    WarrantyHistoryEvent.objects.create(claim=claim, text='Статус изменён')
+    thread = WarrantyTelegramThread.objects.create(claim=claim)
+    WarrantyTelegramMessage.objects.create(
+        thread=thread, direction='inbound', sender_name='Мастер', text='Принято в работу',
+    )
+    WarrantyBitrixOutbox.objects.create(
+        claim=claim, status=WarrantyBitrixOutbox.Status.SENT,
+    )
+    WarrantyBitrixOutbox.objects.create(
+        claim=claim, status=WarrantyBitrixOutbox.Status.ERROR, last_error='Нет связи',
+    )
+
+    texts = [row[3] for row in activity_rows(claim)]
+
+    assert 'Статус изменён' in texts
+    assert 'Принято в работу' in texts
+    assert 'Нет связи' in texts
+    assert 'Отправлено' not in texts
+
+
+def test_activity_admin_is_read_only_for_claim_viewer(rf, django_user_model, db):
+    user = django_user_model.objects.create_user(username='history-viewer')
+    permission = Permission.objects.get(codename='view_warrantyclaim')
+    user.user_permissions.add(permission)
+    request = rf.get('/admin/warranty/warrantyactivity/')
+    request.user = user
+    model_admin = WarrantyActivityAdmin(WarrantyActivity, AdminSite())
+
+    assert model_admin.has_view_permission(request)
+    assert not model_admin.has_change_permission(request)
+    assert not model_admin.has_add_permission(request)
+    assert not model_admin.has_delete_permission(request)
