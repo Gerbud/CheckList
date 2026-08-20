@@ -77,6 +77,8 @@ class WarrantyCustomerBotSettings(models.Model):
     )
     webhook_url = models.URLField('адрес webhook', blank=True)
     webhook_registered_at = models.DateTimeField('webhook зарегистрирован', null=True, blank=True)
+    webhook_checked_at = models.DateTimeField('webhook проверен', null=True, blank=True)
+    webhook_pending_updates = models.PositiveIntegerField('обновлений в очереди', default=0)
     webhook_last_error = models.TextField('ошибка webhook', blank=True)
     support_group_id = models.CharField(
         'ID группы поддержки (без -100)', max_length=64, blank=True,

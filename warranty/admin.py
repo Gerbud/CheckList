@@ -115,13 +115,36 @@ class WarrantyCustomerBotSettingsAdmin(SingletonSettingsAdmin):
         'ocr_space_api_key', 'tesseract_command', 'welcome_text',
         'personal_data_operator', 'personal_data_operator_address', 'privacy_policy_url',
         'consent_withdrawal_contact', 'consent_version', 'consent_text_template',
-        'webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error',
+        'webhook_secret_status', 'webhook_status', 'webhook_url', 'webhook_registered_at',
     )
-    readonly_fields = ('webhook_secret_status', 'webhook_url', 'webhook_registered_at', 'webhook_last_error')
+    readonly_fields = ('webhook_secret_status', 'webhook_status', 'webhook_url', 'webhook_registered_at')
 
     @admin.display(description='секрет webhook')
     def webhook_secret_status(self, obj):
         return 'создан автоматически' if obj and obj.webhook_secret_token else 'будет создан кнопкой автоматически'
+
+    @admin.display(description='статус webhook')
+    def webhook_status(self, obj):
+        if not obj or not obj.bot_token:
+            color, label, details = '#ba2121', 'Не настроен', 'Не указан токен бота.'
+        elif not obj.is_enabled:
+            color, label, details = '#777', 'Выключен', 'Клиентский бот выключен.'
+        elif obj.webhook_last_error:
+            color, label, details = '#ba2121', 'Есть ошибка', obj.webhook_last_error
+        elif not obj.webhook_url:
+            color, label, details = '#ba7d00', 'Не зарегистрирован', 'Создайте webhook.'
+        else:
+            color, label = '#2b8a3e', 'Работает'
+            details = f'В очереди: {obj.webhook_pending_updates}.'
+        checked = timezone.localtime(obj.webhook_checked_at).strftime('%d.%m.%Y %H:%M') if obj and obj.webhook_checked_at else 'ещё не проверялся'
+        return format_html(
+            '<span style="display:inline-block;margin-right:12px;padding:5px 10px;border-radius:12px;'
+            'background:{};color:white;font-weight:600">{}</span>'
+            '<button type="submit" name="_check_webhook" class="button">Проверить</button>'
+            '<div style="margin-top:7px">{} <small style="color:var(--body-quiet-color,#666)">'
+            'Проверен: {}</small></div>',
+            color, label, details, checked,
+        )
 
     def has_add_permission(self, request):
         return not WarrantyCustomerBotSettings.objects.exists()
@@ -149,6 +172,8 @@ class WarrantyCustomerBotSettingsAdmin(SingletonSettingsAdmin):
                 _telegram(obj, 'setMyCommands', {'commands': _customer_bot_commands()})
                 obj.webhook_url = webhook_url
                 obj.webhook_registered_at = timezone.now()
+                obj.webhook_checked_at = timezone.now()
+                obj.webhook_pending_updates = 0
                 obj.webhook_last_error = ''
                 self.message_user(request, f'Webhook создан: {webhook_url}', messages.SUCCESS)
             elif action == '_check_webhook':
@@ -157,6 +182,8 @@ class WarrantyCustomerBotSettingsAdmin(SingletonSettingsAdmin):
                 pending = int(info.get('pending_update_count') or 0)
                 error = str(info.get('last_error_message') or '')
                 obj.webhook_url = actual_url
+                obj.webhook_checked_at = timezone.now()
+                obj.webhook_pending_updates = pending
                 obj.webhook_last_error = error
                 level = messages.SUCCESS if actual_url == webhook_url and not error else messages.WARNING
                 self.message_user(request, f'Webhook: {actual_url or "не зарегистрирован"}. В очереди: {pending}.', level)
@@ -164,12 +191,15 @@ class WarrantyCustomerBotSettingsAdmin(SingletonSettingsAdmin):
                 _telegram(obj, 'deleteWebhook', {'drop_pending_updates': False})
                 obj.webhook_url = ''
                 obj.webhook_registered_at = None
+                obj.webhook_checked_at = timezone.now()
+                obj.webhook_pending_updates = 0
                 obj.webhook_last_error = ''
                 self.message_user(request, 'Webhook удалён.', messages.SUCCESS)
             obj.save()
         except (RuntimeError, ValueError) as exc:
+            obj.webhook_checked_at = timezone.now()
             obj.webhook_last_error = str(exc)
-            obj.save(update_fields=('webhook_last_error', 'updated_at'))
+            obj.save(update_fields=('webhook_checked_at', 'webhook_last_error', 'updated_at'))
             self.message_user(request, f'Не удалось выполнить операцию: {exc}', messages.ERROR)
         return super().response_change(request, obj)
 

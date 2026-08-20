@@ -362,7 +362,8 @@ def test_customer_bot_admin_has_webhook_buttons(client):
     response = client.get(reverse('admin:warranty_warrantycustomerbotsettings_change', args=[config.pk]))
     assert response.status_code == 200
     assert 'Создать webhook' in response.content.decode()
-    assert 'Проверить webhook' in response.content.decode()
+    assert 'name="_check_webhook"' in response.content.decode()
+    assert 'Статус webhook' in response.content.decode()
     assert '<select name="ocr_model"' in response.content.decode()
     assert 'name="consent_text_template"' in response.content.decode()
 

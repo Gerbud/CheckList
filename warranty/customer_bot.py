@@ -1255,7 +1255,8 @@ def customer_bot_webhook(request):
     except (RuntimeError, BitrixSyncError) as exc:
         if 'update_log' in locals():
             update_log.delete()
+        config.webhook_checked_at = timezone.now()
         config.webhook_last_error = str(exc)[:2000]
-        config.save(update_fields=('webhook_last_error', 'updated_at'))
+        config.save(update_fields=('webhook_checked_at', 'webhook_last_error', 'updated_at'))
         return JsonResponse({'error': str(exc)}, status=503)
     return JsonResponse({'ok': True})
