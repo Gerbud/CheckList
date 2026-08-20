@@ -17,6 +17,7 @@ db.sqlite3.*
 *.sql
 sqlite_backup.json
 media/
+work/
 backups/
 db.sqlite3-journal
 .mysql-data/

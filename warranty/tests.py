@@ -10,6 +10,7 @@ from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
 from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramSettings, WarrantyTelegramThread
 from warranty.services import update_claim
+from warranty.telegram import _claim_message
 
 
 @pytest.mark.django_db
@@ -93,3 +94,22 @@ def test_site_claim_update_is_queued_for_bitrix():
     queued = WarrantyBitrixOutbox.objects.get(claim=claim)
     assert queued.payload == {'UF_STATUS': '4', 'UF_COMMENT': 'Принято сервисным центром'}
     assert queued.status == WarrantyBitrixOutbox.Status.PENDING
+
+
+@pytest.mark.django_db
+def test_telegram_claim_message_has_clickable_product_and_phone(settings):
+    settings.WARRANTY_PRODUCT_URL_TEMPLATE = 'https://shop.example/catalog/sku/{product_id}/'
+    claim = WarrantyClaim.objects.create(
+        external_id=81,
+        product_name='Дрель & шуруповёрт',
+        external_product_id='2178',
+        customer_name='Иван <Иванов>',
+        phone='+7 (999) 123-45-67',
+        defect='Не включается',
+    )
+
+    message = _claim_message(claim)
+
+    assert 'Дрель &amp; шуруповёрт\n<a href="https://shop.example/catalog/sku/2178/">Открыть товар</a>' in message
+    assert '<a href="tel:+79991234567">+7 (999) 123-45-67</a>' in message
+    assert 'Иван &lt;Иванов&gt;' in message

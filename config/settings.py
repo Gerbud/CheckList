@@ -43,6 +43,13 @@ TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv(
     'False',
 ).strip().lower() in {'1', 'true', 'yes', 'on'}
 SITE_URL = os.getenv('SITE_URL', 'https://checklist.es-helper.ru').rstrip('/')
+BITRIX_WARRANTY_SYNC_URL = os.getenv('BITRIX_WARRANTY_SYNC_URL', '').strip()
+BITRIX_WARRANTY_SYNC_SECRET = os.getenv('BITRIX_WARRANTY_SYNC_SECRET', '').strip()
+BITRIX_WARRANTY_SYNC_TIMEOUT = float(os.getenv('BITRIX_WARRANTY_SYNC_TIMEOUT', '20'))
+WARRANTY_PRODUCT_URL_TEMPLATE = os.getenv(
+    'WARRANTY_PRODUCT_URL_TEMPLATE',
+    'https://pinel.ru/catalog/sku/{product_id}/',
+).strip()
 TELEGRAM_WEBHOOK_MAX_BODY_BYTES = int(
     os.getenv('TELEGRAM_WEBHOOK_MAX_BODY_BYTES', '1048576')
 )

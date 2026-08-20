@@ -1,3 +1,7 @@
+import html
+import re
+
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -16,7 +20,49 @@ def _config():
     return warranty, bot
 
 
+def _product_url(claim):
+    raw = claim.raw_source_data or {}
+    for key in ('UF_PRODUCT_URL', 'PRODUCT_URL', 'DETAIL_PAGE_URL'):
+        value = str(raw.get(key) or '').strip()
+        if value.startswith(('https://', 'http://')):
+            return value
+    product_id = str(claim.external_product_id or '').strip()
+    template = getattr(settings, 'WARRANTY_PRODUCT_URL_TEMPLATE', '')
+    if not product_id or not template:
+        return ''
+    return template.format(product_id=product_id)
+
+
+def _phone_href(phone):
+    value = re.sub(r'[^\d+]', '', phone or '')
+    return f'tel:{value}' if value else ''
+
+
+def _claim_message(claim):
+    product_name = html.escape(claim.product_name or '—')
+    product_url = _product_url(claim)
+    product_link = (
+        f'\n<a href="{html.escape(product_url, quote=True)}">Открыть товар</a>'
+        if product_url else ''
+    )
+    phone_text = html.escape(claim.phone or '—')
+    phone_href = _phone_href(claim.phone)
+    phone = (
+        f'<a href="{html.escape(phone_href, quote=True)}">{phone_text}</a>'
+        if phone_href else phone_text
+    )
+    return (
+        f'<b>Гарантийное обращение №{claim.external_id}</b>\n\n'
+        f'<b>Товар</b>\n{product_name}{product_link}\n\n'
+        f'<b>Клиент:</b> {html.escape(claim.customer_name or "—")}\n'
+        f'<b>Телефон:</b> {phone}\n\n'
+        f'<b>Неисправность</b>\n{html.escape(claim.defect or "—")}'
+    )
+
+
 def create_claim_topic(thread):
+    if thread.topic_id:
+        return thread
     warranty, bot = _config()
     response = send_telegram_request(
         'createForumTopic',
@@ -40,12 +86,9 @@ def create_claim_topic(thread):
         {
             'chat_id': warranty.chat_id,
             'message_thread_id': topic_id,
-            'text': (
-                f'Гарантийное обращение №{thread.claim.external_id}\n'
-                f'Клиент: {thread.claim.customer_name or "—"}\n'
-                f'Товар: {thread.claim.product_name or "—"}\n'
-                f'Неисправность: {thread.claim.defect or "—"}'
-            ),
+            'text': _claim_message(thread.claim),
+            'parse_mode': 'HTML',
+            'disable_web_page_preview': True,
         },
         system_settings=bot,
         quick=True,
@@ -79,8 +122,18 @@ def sync_warranty_topics(limit=50):
         state__in=(WarrantyTelegramThread.State.PLANNED, WarrantyTelegramThread.State.CLOSE_PENDING, WarrantyTelegramThread.State.RESTORE_PENDING)
     ).order_by('id')[:limit]
     for thread in query:
+        original_state = thread.state
+        if original_state == WarrantyTelegramThread.State.PLANNED:
+            claimed = WarrantyTelegramThread.objects.filter(
+                pk=thread.pk,
+                state=WarrantyTelegramThread.State.PLANNED,
+                topic_id='',
+            ).update(state=WarrantyTelegramThread.State.CREATING)
+            if not claimed:
+                continue
+            thread.state = WarrantyTelegramThread.State.CREATING
         try:
-            if thread.state == WarrantyTelegramThread.State.PLANNED:
+            if original_state == WarrantyTelegramThread.State.PLANNED:
                 create_claim_topic(thread)
                 results['created'] += 1
             elif thread.state == WarrantyTelegramThread.State.CLOSE_PENDING:

@@ -167,9 +167,43 @@ class WarrantyWorkItem(models.Model):
     notes = models.TextField(blank=True)
 
 
+class WarrantyBitrixOutbox(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Ожидает отправки'
+        SENDING = 'sending', 'Отправляется'
+        SENT = 'sent', 'Отправлено'
+        ERROR = 'error', 'Ошибка'
+
+    claim = models.ForeignKey(WarrantyClaim, on_delete=models.CASCADE, related_name='bitrix_outbox')
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ('id',)
+        indexes = [models.Index(fields=('status', 'id'))]
+
+
+class WarrantyBitrixSyncState(models.Model):
+    claim_cursor = models.PositiveBigIntegerField(default=0)
+    history_cursor = models.PositiveBigIntegerField(default=0)
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class WarrantyTelegramThread(models.Model):
     class State(models.TextChoices):
         PLANNED = 'planned', 'Ожидает создания'
+        CREATING = 'creating', 'Создаётся'
         ACTIVE = 'active', 'Активна'
         CLOSE_PENDING = 'close_pending', 'Ожидает закрытия'
         ARCHIVED = 'archived', 'Архивирована'

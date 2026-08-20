@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
-from warranty.models import WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramThread
+from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramThread
 
 
 @transaction.atomic
@@ -15,6 +15,21 @@ def update_claim(*, claim, form, actor):
     locked.due_at = updated.due_at
     locked.comment = updated.comment
     locked.save()
+
+    if locked.source == 'bitrix':
+        WarrantyBitrixOutbox.objects.create(
+            claim=locked,
+            payload={
+                'UF_STATUS': {
+                    WarrantyClaim.Status.NEW: '1',
+                    WarrantyClaim.Status.SERVICE_DECISION: '2',
+                    WarrantyClaim.Status.CLOSED: '3',
+                    WarrantyClaim.Status.IN_PROGRESS: '4',
+                    WarrantyClaim.Status.CUSTOMER_WAIT: '5',
+                }.get(locked.status, locked.source_status or '1'),
+                'UF_COMMENT': locked.comment,
+            },
+        )
 
     if old_status != locked.status:
         WarrantyHistoryEvent.objects.create(
