@@ -1,3 +1,5 @@
+import unicodedata
+
 from django import forms
 from django.contrib import admin, messages
 from django.urls import reverse
@@ -247,8 +249,64 @@ class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
 
     form = StatusIconForm
 
+    EMOJI_SEARCH_ALIASES = {
+        '🤖': 'робот бот robot bot',
+        '🛠': 'инструмент ремонт молоток ключ tools repair hammer wrench',
+        '🔧': 'инструмент ремонт ключ wrench tool repair',
+        '🔨': 'инструмент ремонт молоток hammer tool repair',
+        '🔍': 'поиск диагностика лупа search diagnostics magnifier',
+        '🔎': 'поиск диагностика лупа search diagnostics magnifier',
+        '🛍': 'покупки магазин сумка пакет shopping store bag',
+        '👜': 'сумка покупки bag shopping',
+        '💼': 'портфель работа кейс briefcase work case',
+        '🛒': 'тележка покупки магазин cart shopping store',
+        '🚂': 'поезд транспорт train transport',
+        '🚗': 'машина автомобиль транспорт car auto transport',
+        '✈': 'самолет транспорт путешествие plane travel transport',
+        '🚢': 'корабль транспорт ship transport',
+        '📦': 'коробка посылка доставка запчасти box parcel delivery parts',
+        '👤': 'клиент человек пользователь person customer user',
+        '👥': 'люди клиенты группа people customers group',
+        '✅': 'готово да галочка успех ready yes check success',
+        '❓': 'вопрос решение помощь question decision help',
+        '❗': 'важно внимание ошибка important warning error',
+        '🆕': 'новый new',
+        '🔒': 'закрыто замок closed lock',
+        '⭐': 'звезда избранное star favorite',
+        '❤️': 'сердце любовь heart love',
+        '🎓': 'учеба образование выпускник study education graduate',
+        '🎤': 'микрофон музыка голос microphone music voice',
+        '🎵': 'музыка нота music note',
+        '🧪': 'тест лаборатория диагностика test lab diagnostics',
+        '🏕': 'палатка туризм отдых tent camping travel',
+        '🦄': 'единорог unicorn',
+    }
+
+    class SearchableEmojiSelect(forms.Select):
+        def __init__(self, *args, search_aliases=None, **kwargs):
+            self.search_aliases = search_aliases or {}
+            super().__init__(*args, **kwargs)
+
+        def create_option(
+            self, name, value, label, selected, index, subindex=None, attrs=None,
+        ):
+            option = super().create_option(
+                name, value, label, selected, index, subindex=subindex, attrs=attrs,
+            )
+            emoji = str(label) if value else ''
+            unicode_names = ' '.join(
+                unicodedata.name(character, '') for character in emoji
+            ).lower()
+            option['attrs']['data-search'] = ' '.join(filter(None, (
+                emoji,
+                unicode_names,
+                self.search_aliases.get(emoji, ''),
+            )))
+            return option
+
     class Media:
         css = {'all': ('warranty/admin_status_icon.css',)}
+        js = ('warranty/admin_status_icon.js',)
 
     @staticmethod
     def telegram_icons():
@@ -269,10 +327,13 @@ class WarrantyTelegramStatusIconAdmin(admin.ModelAdmin):
                 label=db_field.verbose_name,
                 required=not db_field.blank,
                 choices=choices,
-                widget=forms.Select(attrs={
-                    'class': 'telegram-emoji-select',
-                    'title': 'Выберите иконку Telegram',
-                }),
+                widget=self.SearchableEmojiSelect(
+                    search_aliases=self.EMOJI_SEARCH_ALIASES,
+                    attrs={
+                        'class': 'telegram-emoji-select',
+                        'title': 'Выберите иконку Telegram',
+                    },
+                ),
             )
         return super().formfield_for_dbfield(db_field, request, **kwargs)
 

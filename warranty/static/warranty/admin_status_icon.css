@@ -50,6 +50,102 @@
     text-align: center;
 }
 
+.telegram-emoji-select-enhanced {
+    position: absolute !important;
+    height: 1px !important;
+    width: 1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+}
+
+.telegram-emoji-search-picker {
+    display: inline-block;
+    position: relative;
+}
+
+.telegram-emoji-search-trigger {
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--body-fg);
+    cursor: pointer;
+    font-size: 25px;
+    height: 42px;
+    min-width: 58px;
+    padding: 3px 12px;
+}
+
+.telegram-emoji-search-trigger:hover,
+.telegram-emoji-search-trigger[aria-expanded="true"] {
+    border-color: var(--primary);
+}
+
+.telegram-emoji-search-panel {
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .25);
+    box-sizing: border-box;
+    left: 0;
+    padding: 10px;
+    position: absolute;
+    top: calc(100% + 5px);
+    width: 330px;
+    z-index: 1000;
+}
+
+.telegram-emoji-search-input {
+    box-sizing: border-box;
+    margin: 0 0 10px;
+    width: 100%;
+}
+
+.telegram-emoji-search-grid {
+    display: grid;
+    gap: 6px;
+    grid-template-columns: repeat(6, 1fr);
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.telegram-emoji-search-option {
+    align-items: center;
+    background: var(--darkened-bg);
+    border: 1px solid transparent;
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    font-size: 25px;
+    height: 43px;
+    justify-content: center;
+    padding: 2px;
+}
+
+.telegram-emoji-search-option:hover,
+.telegram-emoji-search-option:focus {
+    background: var(--selected-bg);
+    border-color: var(--primary);
+    outline: none;
+}
+
+.telegram-emoji-search-option[hidden] {
+    display: none;
+}
+
+.telegram-emoji-search-empty {
+    color: var(--body-quiet-color);
+    padding: 16px 4px;
+    text-align: center;
+}
+
+@media (max-width: 600px) {
+    .telegram-emoji-search-panel {
+        left: auto;
+        right: 0;
+        width: min(330px, calc(100vw - 32px));
+    }
+}
+
 #result_list td.field-emoji {
     font-size: 28px;
     text-align: center;

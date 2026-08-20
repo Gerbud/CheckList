@@ -240,6 +240,12 @@ def test_status_icon_admin_changelist_has_visual_telegram_select(monkeypatch):
         ('star-id', '⭐'),
     ]
     assert 'telegram-emoji-select' in field.widget.attrs['class']
+    option = field.widget.create_option(
+        'custom_emoji_id', 'robot-id', '🤖', False, 1,
+    )
+    assert 'робот' in option['attrs']['data-search']
+    assert 'robot face' in option['attrs']['data-search']
+    assert 'warranty/admin_status_icon.js' in model_admin.media._js
 
 
 @pytest.mark.django_db
