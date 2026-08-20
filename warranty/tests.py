@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+from types import SimpleNamespace
 
 import pytest
 from django.contrib.auth.models import User
@@ -8,9 +9,10 @@ from django.urls import reverse
 
 from checklists.models import EmployeeProfile
 from warranty.forms import WarrantyClaimUpdateForm
-from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramThread
+from warranty.models import WarrantyBitrixOutbox, WarrantyClaim, WarrantyHistoryEvent, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 from warranty.services import update_claim
-from warranty.telegram import _claim_message, record_warranty_update
+from warranty.telegram import _claim_message, _status_keyboard, record_warranty_update
+import warranty.telegram as warranty_telegram
 
 
 @pytest.mark.django_db
@@ -138,3 +140,129 @@ def test_warranty_topic_message_is_recorded_by_ids():
     assert saved.telegram_message_id == '789'
     assert saved.sender_external_id == '10'
     assert saved.text == 'Принято в работу'
+
+
+@pytest.mark.django_db
+def test_telegram_document_is_attached_to_topic_claim(monkeypatch, settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+    claim = WarrantyClaim.objects.create(external_id=83)
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim,
+        chat_id='-100123',
+        topic_id='457',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    update = {'message': {
+        'message_id': 790,
+        'message_thread_id': 457,
+        'date': 1787212800,
+        'chat': {'id': -100123},
+        'from': {'id': 10, 'first_name': 'Иван'},
+        'caption': 'Фото дефекта',
+        'document': {
+            'file_id': 'telegram-file-id',
+            'file_unique_id': 'stable-file-id',
+            'file_name': 'defect.jpg',
+            'mime_type': 'image/jpeg',
+            'file_size': 12,
+        },
+    }}
+    downloads = []
+    monkeypatch.setattr(
+        warranty_telegram,
+        '_config',
+        lambda: (SimpleNamespace(), SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        warranty_telegram,
+        '_download_telegram_file',
+        lambda file_id, bot: (downloads.append(file_id) or b'image-content', 'documents/defect.jpg'),
+    )
+
+    assert record_warranty_update(update) is True
+    assert record_warranty_update(update) is True
+
+    attachment = claim.attachments.get()
+    assert attachment.original_name == 'defect.jpg'
+    assert attachment.content_type == 'image/jpeg'
+    assert attachment.file.read() == b'image-content'
+    assert attachment.source_path == 'telegram:telegram-file-id'
+    assert downloads == ['telegram-file-id']
+    saved = WarrantyTelegramMessage.objects.get(thread=thread)
+    assert saved.payload['attachments'][0]['file_unique_id'] == 'stable-file-id'
+
+
+@pytest.mark.django_db
+def test_customer_wait_has_seeded_handover_button():
+    claim = WarrantyClaim.objects.create(
+        external_id=84, status=WarrantyClaim.Status.CUSTOMER_WAIT,
+    )
+
+    keyboard = _status_keyboard(claim)
+
+    button = WarrantyTelegramStatusButton.objects.get(
+        source_status=WarrantyClaim.Status.CUSTOMER_WAIT,
+        label='Выдано клиенту',
+    )
+    assert keyboard == {'inline_keyboard': [[{
+        'text': 'Выдано клиенту',
+        'callback_data': f'warranty:{claim.pk}:{button.pk}',
+    }]]}
+
+
+@pytest.mark.django_db
+def test_warranty_status_callback_closes_claim_and_queues_bitrix(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=85,
+        source='bitrix',
+        source_status='5',
+        status=WarrantyClaim.Status.CUSTOMER_WAIT,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim,
+        chat_id='-100123',
+        topic_id='458',
+        state=WarrantyTelegramThread.State.ACTIVE,
+    )
+    button = WarrantyTelegramStatusButton.objects.get(
+        source_status=WarrantyClaim.Status.CUSTOMER_WAIT,
+        label='Выдано клиенту',
+    )
+    calls = []
+
+    def fake_send(method, payload, **kwargs):
+        calls.append((method, payload))
+        return SimpleNamespace(data={
+            'result': {'message_id': 901, 'message_thread_id': 458}
+            if method == 'sendMessage' else True,
+        })
+
+    monkeypatch.setattr(
+        warranty_telegram,
+        '_config',
+        lambda: (SimpleNamespace(chat_id='-100123'), SimpleNamespace()),
+    )
+    monkeypatch.setattr(warranty_telegram, 'send_telegram_request', fake_send)
+    update = {'callback_query': {
+        'id': 'callback-1',
+        'data': f'warranty:{claim.pk}:{button.pk}',
+        'from': {'id': 10, 'first_name': 'Иван'},
+        'message': {
+            'message_id': 800,
+            'message_thread_id': 458,
+            'chat': {'id': -100123},
+        },
+    }}
+
+    assert record_warranty_update(update) is True
+
+    claim.refresh_from_db()
+    thread.refresh_from_db()
+    assert claim.status == WarrantyClaim.Status.CLOSED
+    assert thread.state == WarrantyTelegramThread.State.CLOSE_PENDING
+    assert WarrantyBitrixOutbox.objects.get(claim=claim).payload['UF_STATUS'] == '3'
+    assert WarrantyHistoryEvent.objects.filter(claim=claim, actor_name='Иван').exists()
+    assert WarrantyTelegramMessage.objects.get(thread=thread).telegram_message_id == '901'
+    assert [method for method, payload in calls] == [
+        'answerCallbackQuery', 'editMessageText', 'sendMessage',
+    ]

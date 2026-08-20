@@ -112,6 +112,32 @@ class WarrantyClaim(models.Model):
         return f'#{self.external_id} {self.product_name or self.customer_name}'
 
 
+class WarrantyTelegramStatusButton(models.Model):
+    source_status = models.CharField(
+        'показывать при статусе', max_length=32, choices=WarrantyClaim.Status.choices,
+    )
+    label = models.CharField('текст кнопки', max_length=64)
+    target_status = models.CharField(
+        'перевести в статус', max_length=32, choices=WarrantyClaim.Status.choices,
+    )
+    position = models.PositiveSmallIntegerField('порядок', default=100)
+    is_enabled = models.BooleanField('показывать', default=True)
+
+    class Meta:
+        verbose_name = 'кнопка Telegram для статуса гарантии'
+        verbose_name_plural = 'кнопки Telegram для статусов гарантии'
+        ordering = ('source_status', 'position', 'id')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('source_status', 'label'),
+                name='unique_warranty_telegram_status_button',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.get_source_status_display()}: {self.label} → {self.get_target_status_display()}'
+
+
 class WarrantyAttachment(models.Model):
     claim = models.ForeignKey(WarrantyClaim, on_delete=models.CASCADE, related_name='attachments')
     external_file_id = models.CharField('ID файла в источнике', max_length=64)

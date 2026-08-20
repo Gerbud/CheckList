@@ -1,13 +1,17 @@
 import html
+import hashlib
 import re
+from pathlib import Path
+from urllib import error, request
 
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 
 from checklists.models import TelegramSystemSettings
-from checklists.telegram_client import TelegramAPIError, send_telegram_request
-from warranty.models import WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramThread
+from checklists.telegram_client import OFFICIAL_API_BASE_URL, TelegramAPIError, send_telegram_request
+from warranty.models import WarrantyAttachment, WarrantyTelegramMessage, WarrantyTelegramSettings, WarrantyTelegramStatusButton, WarrantyTelegramThread
 
 
 def _config():
@@ -60,6 +64,19 @@ def _claim_message(claim):
     )
 
 
+def _status_keyboard(claim):
+    buttons = WarrantyTelegramStatusButton.objects.filter(
+        source_status=claim.status,
+        is_enabled=True,
+    ).order_by('position', 'id')
+    return {
+        'inline_keyboard': [[{
+            'text': button.label,
+            'callback_data': f'warranty:{claim.pk}:{button.pk}',
+        }] for button in buttons]
+    }
+
+
 def create_claim_topic(thread):
     if thread.topic_id:
         return thread
@@ -81,15 +98,19 @@ def create_claim_topic(thread):
         locked.state = WarrantyTelegramThread.State.ACTIVE
         locked.last_error = ''
         locked.save()
+    payload = {
+        'chat_id': warranty.chat_id,
+        'message_thread_id': topic_id,
+        'text': _claim_message(thread.claim),
+        'parse_mode': 'HTML',
+        'disable_web_page_preview': True,
+    }
+    keyboard = _status_keyboard(thread.claim)
+    if keyboard['inline_keyboard']:
+        payload['reply_markup'] = keyboard
     message_response = send_telegram_request(
         'sendMessage',
-        {
-            'chat_id': warranty.chat_id,
-            'message_thread_id': topic_id,
-            'text': _claim_message(thread.claim),
-            'parse_mode': 'HTML',
-            'disable_web_page_preview': True,
-        },
+        payload,
         system_settings=bot,
         quick=True,
     )
@@ -106,7 +127,98 @@ def create_claim_topic(thread):
     return locked
 
 
+def _telegram_file_entries(message):
+    entries = []
+    document_types = (
+        ('document', 'document.bin'),
+        ('video', 'video.mp4'),
+        ('audio', 'audio.mp3'),
+        ('voice', 'voice.ogg'),
+        ('animation', 'animation.mp4'),
+        ('video_note', 'video-note.mp4'),
+    )
+    for key, fallback_name in document_types:
+        item = message.get(key)
+        if isinstance(item, dict) and item.get('file_id'):
+            entries.append({
+                'file_id': str(item['file_id']),
+                'file_unique_id': str(item.get('file_unique_id') or item['file_id']),
+                'file_name': str(item.get('file_name') or fallback_name),
+                'content_type': str(item.get('mime_type') or ''),
+                'file_size': int(item.get('file_size') or 0),
+            })
+    photos = message.get('photo') or []
+    if isinstance(photos, list):
+        candidates = [item for item in photos if isinstance(item, dict) and item.get('file_id')]
+        if candidates:
+            item = max(candidates, key=lambda value: int(value.get('file_size') or 0))
+            entries.append({
+                'file_id': str(item['file_id']),
+                'file_unique_id': str(item.get('file_unique_id') or item['file_id']),
+                'file_name': f"photo-{message.get('message_id') or 'telegram'}.jpg",
+                'content_type': 'image/jpeg',
+                'file_size': int(item.get('file_size') or 0),
+            })
+    return entries
+
+
+def _download_telegram_file(file_id, bot):
+    response = send_telegram_request(
+        'getFile',
+        {'file_id': file_id},
+        system_settings=bot,
+        incoming=True,
+    )
+    result = response.data.get('result') or {}
+    file_path = str(result.get('file_path') or '').lstrip('/')
+    if not file_path or '..' in Path(file_path).parts:
+        raise TelegramAPIError('Telegram не вернул безопасный путь файла.')
+    url = f'{OFFICIAL_API_BASE_URL}/file/bot{bot.bot_token}/{file_path}'
+    max_bytes = settings.WARRANTY_TELEGRAM_FILE_MAX_BYTES
+    try:
+        with request.urlopen(url, timeout=bot.request_timeout_seconds) as response_handle:
+            content = response_handle.read(max_bytes + 1)
+    except (TimeoutError, error.URLError) as exc:
+        raise TelegramAPIError('Не удалось скачать файл гарантийного обращения из Telegram.') from exc
+    if len(content) > max_bytes:
+        raise TelegramAPIError('Файл гарантийного обращения превышает допустимый размер.', retryable=False)
+    return content, file_path
+
+
+def _save_message_attachments(thread, message):
+    entries = _telegram_file_entries(message)
+    if not entries:
+        return []
+    _, bot = _config()
+    saved = []
+    for entry in entries:
+        digest = hashlib.sha256(entry['file_unique_id'].encode('utf-8')).hexdigest()
+        external_id = f'telegram:{digest[:55]}'
+        attachment, created = WarrantyAttachment.objects.get_or_create(
+            claim=thread.claim,
+            external_file_id=external_id,
+            defaults={
+                'original_name': Path(entry['file_name']).name[:500],
+                'content_type': entry['content_type'][:255],
+                'size': entry['file_size'],
+                'source_path': f"telegram:{entry['file_id']}",
+            },
+        )
+        if created or not attachment.file:
+            content, telegram_path = _download_telegram_file(entry['file_id'], bot)
+            file_name = Path(entry['file_name'] or telegram_path).name or 'telegram-file'
+            attachment.size = len(content)
+            attachment.source_path = f"telegram:{entry['file_id']}"
+            attachment.file.save(file_name[:255], ContentFile(content), save=True)
+        saved.append(attachment)
+    return saved
+
+
 def record_warranty_update(update):
+    callback = update.get('callback_query') or {}
+    callback_data = str(callback.get('data') or '')
+    if callback_data.startswith('warranty:'):
+        return _handle_status_callback(callback, callback_data)
     message = update.get('message') or update.get('edited_message') or {}
     chat_id = str((message.get('chat') or {}).get('id') or '')
     topic_id = str(message.get('message_thread_id') or '')
@@ -136,9 +248,87 @@ def record_warranty_update(update):
                 'message_id': message.get('message_id'),
                 'message_thread_id': message.get('message_thread_id'),
                 'date': message.get('date'),
+                'attachments': [
+                    {
+                        'file_id': item['file_id'],
+                        'file_unique_id': item['file_unique_id'],
+                        'file_name': item['file_name'],
+                    }
+                    for item in _telegram_file_entries(message)
+                ],
             },
         },
     )
+    _save_message_attachments(thread, message)
+    return True
+
+
+def _handle_status_callback(callback, callback_data):
+    try:
+        prefix, claim_id, button_id = callback_data.split(':', 2)
+        claim_id, button_id = int(claim_id), int(button_id)
+    except (TypeError, ValueError):
+        return False
+    message = callback.get('message') or {}
+    chat_id = str((message.get('chat') or {}).get('id') or '')
+    topic_id = str(message.get('message_thread_id') or '')
+    thread = WarrantyTelegramThread.objects.select_related('claim').filter(
+        claim_id=claim_id, chat_id=chat_id, topic_id=topic_id,
+    ).first()
+    button = WarrantyTelegramStatusButton.objects.filter(pk=button_id).first()
+    if not thread or not button:
+        return False
+    sender = callback.get('from') or {}
+    actor_name = ' '.join(filter(None, (
+        str(sender.get('first_name') or '').strip(),
+        str(sender.get('last_name') or '').strip(),
+    ))) or str(sender.get('username') or sender.get('id') or 'Telegram')
+    from warranty.services import apply_telegram_status_button
+    claim, changed = apply_telegram_status_button(
+        claim_id=claim_id, button=button, actor_name=actor_name[:255],
+    )
+    warranty, bot = _config()
+    callback_payload = {'callback_query_id': callback.get('id')}
+    if not changed:
+        callback_payload.update({'text': 'Статус обращения уже изменён.', 'show_alert': True})
+    else:
+        callback_payload['text'] = f'Статус: {claim.get_status_display()}'
+    send_telegram_request('answerCallbackQuery', callback_payload, system_settings=bot, quick=True)
+    message_id = message.get('message_id')
+    if message_id:
+        send_telegram_request(
+            'editMessageText',
+            {
+                'chat_id': warranty.chat_id,
+                'message_id': message_id,
+                'text': _claim_message(claim),
+                'parse_mode': 'HTML',
+                'disable_web_page_preview': True,
+                'reply_markup': _status_keyboard(claim),
+            },
+            system_settings=bot,
+            quick=True,
+        )
+    if changed:
+        response = send_telegram_request(
+            'sendMessage',
+            {
+                'chat_id': warranty.chat_id,
+                'message_thread_id': int(thread.topic_id),
+                'text': f'✅ {button.label}\nНовый статус: {claim.get_status_display()}\nИзменил: {actor_name}',
+            },
+            system_settings=bot,
+            quick=True,
+        )
+        result = response.data.get('result') or {}
+        WarrantyTelegramMessage.objects.create(
+            thread=thread,
+            telegram_message_id=str(result.get('message_id') or ''),
+            direction='outbound',
+            sender_name='Telegram bot',
+            text=f'{button.label}: {claim.get_status_display()}',
+            payload=result if isinstance(result, dict) else {},
+        )
     return True
 
 
