@@ -25,7 +25,7 @@ final class Api
         switch ($action) {
             case 'health':
                 self::assertSchema();
-                return array('module' => self::MODULE_ID, 'version' => '1.3.2');
+                return array('module' => self::MODULE_ID, 'version' => '1.3.3');
             case 'claims.list':
                 return self::listClaims($payload);
             case 'claims.update':
