@@ -471,6 +471,12 @@ def sync_warranty_topics(limit=50):
                 thread.save(update_fields=('last_error', 'updated_at'))
                 results['rate_limited'] += 1
                 break
+            if exc.retryable:
+                thread.state = original_state
+                thread.last_error = str(exc)
+                thread.save(update_fields=('state', 'last_error', 'updated_at'))
+                results['failed'] += 1
+                break
             thread.state = WarrantyTelegramThread.State.ERROR
             thread.last_error = str(exc)
             thread.save(update_fields=('state', 'last_error', 'updated_at'))

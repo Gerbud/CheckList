@@ -328,3 +328,27 @@ def test_topic_sync_uses_status_custom_emoji(monkeypatch):
         'message_thread_id': 460,
         'icon_custom_emoji_id': 'ready-icon',
     })
+
+
+@pytest.mark.django_db
+def test_retryable_topic_icon_error_stays_queued(monkeypatch):
+    claim = WarrantyClaim.objects.create(
+        external_id=88, status=WarrantyClaim.Status.DIAGNOSTICS,
+    )
+    thread = WarrantyTelegramThread.objects.create(
+        claim=claim, chat_id='-100123', topic_id='461',
+        state=WarrantyTelegramThread.State.STATUS_UPDATE_PENDING,
+    )
+    monkeypatch.setattr(
+        warranty_telegram, 'update_claim_topic_icon',
+        lambda thread: (_ for _ in ()).throw(
+            warranty_telegram.TelegramAPIError('request timeout', retryable=True),
+        ),
+    )
+
+    result = warranty_telegram.sync_warranty_topics()
+
+    thread.refresh_from_db()
+    assert result['failed'] == 1
+    assert thread.state == WarrantyTelegramThread.State.STATUS_UPDATE_PENDING
+    assert thread.last_error == 'request timeout'
